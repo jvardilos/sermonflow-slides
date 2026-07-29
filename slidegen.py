@@ -1,106 +1,109 @@
 #!/usr/bin/env python3
 """
 Verse Slide Generator for ProPresenter
-Generates full 1920x1080 TIFF slides with verse text on gradient background
-No template file needed.
+Generates transparent 1920x1080 TIFF slides with verse text over a
+black-to-transparent gradient (left to right), matching the style of
+NEW_MESSAGE_SIDESCREEN.psd / thing.tif.
 """
 
 from PIL import Image, ImageDraw, ImageFont
-import textwrap
 import os
+
+WIDTH, HEIGHT = 1920, 1080
+
+# Gradient: solid black on the left, easing out to fully transparent by
+# roughly 60% of the width, matching the "Rectangle 1" layer in the PSD.
+GRADIENT_MAX_ALPHA = 207          # layer opacity baked into the pixel alpha
+GRADIENT_PLATEAU_X = 281          # stays fully opaque up to here
+GRADIENT_END_X = 1150             # fully transparent from here on
+
+FONT_PATH = '/System/Library/Fonts/HelveticaNeue.ttc'
+FONT_INDEX_REGULAR = 0            # verse body copy (NHaasGroteskDSPro-55Rg equivalent)
+FONT_INDEX_MEDIUM = 10            # reference line (NHaasGroteskDSPro-65Md equivalent)
+FONT_SIZE = 60
+LINE_HEIGHT = 72                  # ~1.2x font size, matches PSD leading
+
+LEFT_MARGIN = 91
+TOP_MARGIN = 248
+TEXT_BOX_WIDTH = 651
+REF_GAP = 143                     # blank-line gap before the reference line
+
+
+def _smoothstep(t):
+    t = min(1.0, max(0.0, t))
+    return t * t * (3 - 2 * t)
+
+
+def _make_gradient(width, height):
+    """Black RGBA gradient, opaque on the left fading to transparent by ~60% width."""
+    img = Image.new('RGBA', (width, height), (0, 0, 0, 0))
+    row = Image.new('RGBA', (width, 1), (0, 0, 0, 0))
+    pixels = row.load()
+    for x in range(width):
+        if x <= GRADIENT_PLATEAU_X:
+            alpha = GRADIENT_MAX_ALPHA
+        elif x >= GRADIENT_END_X:
+            alpha = 0
+        else:
+            t = (x - GRADIENT_PLATEAU_X) / (GRADIENT_END_X - GRADIENT_PLATEAU_X)
+            alpha = int(GRADIENT_MAX_ALPHA * (1 - _smoothstep(t)))
+        pixels[x, 0] = (0, 0, 0, alpha)
+    return row.resize((width, height))
+
+
+def _load_font(index, size):
+    if os.path.exists(FONT_PATH):
+        try:
+            return ImageFont.truetype(FONT_PATH, size, index=index)
+        except Exception:
+            pass
+    return ImageFont.load_default()
+
+
+def _wrap_to_width(draw, text, font, max_width):
+    """Word-wrap text so each line's rendered width fits within max_width."""
+    words = text.split()
+    lines = []
+    current = ''
+    for word in words:
+        candidate = f'{current} {word}'.strip()
+        if draw.textlength(candidate, font=font) <= max_width or not current:
+            current = candidate
+        else:
+            lines.append(current)
+            current = word
+    if current:
+        lines.append(current)
+    return lines
+
 
 def create_verse_slide(verse_text, reference, output_path):
     """
-    Create a complete verse slide with gradient background and text.
+    Create a transparent verse slide with a black-to-transparent gradient
+    on the left and white verse/reference text, matching thing.tif's style.
 
     Args:
         verse_text: The verse quote (str)
         reference: The verse reference e.g., "Matthew 10:45 ESV" (str)
         output_path: Path to save the output .tif file
     """
-
-    width, height = 1920, 1080
-
-    # Create gradient background using PIL
-    img = Image.new('RGB', (width, height))
-    pixels = img.load()
-
-    # Create diagonal gradient: dark gray (bottom-left) to light gray (top-right)
-    # Matches the original template style
-    dark = (35, 35, 35)      # Dark gray
-    light = (215, 215, 215)  # Light gray
-
-    for y in range(height):
-        for x in range(width):
-            # Create smooth diagonal gradient
-            # Stronger weight on x-axis (left to right) than y-axis
-            blend = (x / width * 0.7) + (y / height * 0.3)
-            blend = min(1.0, max(0.0, blend))
-
-            r = int(dark[0] + (light[0] - dark[0]) * blend)
-            g = int(dark[1] + (light[1] - dark[1]) * blend)
-            b = int(dark[2] + (light[2] - dark[2]) * blend)
-
-            pixels[x, y] = (r, g, b)
-
-    # Set up drawing context
+    img = _make_gradient(WIDTH, HEIGHT)
     draw = ImageDraw.Draw(img)
 
-    # Load font - try to find a clean sans-serif font
-    font_large = None
-    font_small = None
+    font_verse = _load_font(FONT_INDEX_REGULAR, FONT_SIZE)
+    font_ref = _load_font(FONT_INDEX_MEDIUM, FONT_SIZE)
 
-    font_paths = [
-        '/System/Library/Fonts/Helvetica.ttc',           # macOS Helvetica
-        '/System/Library/Fonts/Arial.ttf',               # macOS Arial
-        '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',  # Linux
-        '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',  # Linux
-        'C:\\Windows\\Fonts\\arial.ttf',                 # Windows
-        'C:\\Windows\\Fonts\\Helvetica.ttf',             # Windows
-    ]
+    verse_display = f'“{verse_text}"'
+    lines = _wrap_to_width(draw, verse_display, font_verse, TEXT_BOX_WIDTH)
 
-    for font_path in font_paths:
-        if os.path.exists(font_path):
-            try:
-                font_large = ImageFont.truetype(font_path, 70)
-                font_small = ImageFont.truetype(font_path, 55)
-                break
-            except:
-                continue
+    y = TOP_MARGIN
+    for line in lines:
+        draw.text((LEFT_MARGIN, y), line, fill=(255, 255, 255, 255), font=font_verse)
+        y += LINE_HEIGHT
 
-    # Fallback to default if no font found
-    if font_large is None:
-        font_large = ImageFont.load_default()
-        font_small = font_large
+    ref_y = y + REF_GAP - LINE_HEIGHT
+    draw.text((LEFT_MARGIN, ref_y), reference, fill=(255, 255, 255, 255), font=font_ref)
 
-    # Text positioning and styling
-    left_margin = 70
-    top_margin = 180
-    right_margin = 150
-    text_width = width - left_margin - right_margin
-
-    # Wrap verse text to fit width (approximately 40 chars per line)
-    wrapped_verse = textwrap.fill(verse_text, width=45)
-    verse_display = f'"{wrapped_verse}"'
-
-    # Draw verse text in white
-    draw.text(
-        (left_margin, top_margin),
-        verse_display,
-        fill=(255, 255, 255),
-        font=font_large
-    )
-
-    # Draw reference text (lower left area)
-    ref_y = height - 220
-    draw.text(
-        (left_margin, ref_y),
-        reference,
-        fill=(255, 255, 255),
-        font=font_small
-    )
-
-    # Save as TIFF
     img.save(output_path, 'TIFF')
     print(f"✓ Created: {output_path}")
     return output_path
@@ -129,15 +132,7 @@ def batch_create(verses_list, output_dir='./slides'):
 
 
 if __name__ == '__main__':
-    # Example: Single verse
     verse = "For even the Son of Man came not to be served but to serve, and to give his life as a ransom for many."
     reference = "Matthew 10:45 ESV"
 
     create_verse_slide(verse, reference, 'output_verse.tif')
-
-    # Example: Batch processing (uncomment to use)
-    # verses = [
-    #     ("For God so loved the world that he gave his one and only Son...", "John 3:16 ESV"),
-    #     ("In the beginning was the Word...", "John 1:1 ESV"),
-    # ]
-    # batch_create(verses)

@@ -1,3 +1,5 @@
 __pycache__
 deps
 slides
+*.tif
+*.psd
