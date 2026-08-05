@@ -46,8 +46,9 @@ assumption from the PSD turned out to be wrong.
 
 ## Install
 
-Requires **Python 3.11+** (developed on 3.14) and macOS for the bundled
-Helvetica Neue. See [Fonts](#fonts).
+Requires **Python 3.11+** (developed on 3.14) and macOS. It renders with Neue
+Haas Grotesk Display Pro if installed and falls back to the system's Helvetica
+Neue otherwise. See [Fonts](#fonts).
 
 ```bash
 git clone <this repo>
@@ -94,19 +95,21 @@ sort into verse order in any file browser or import dialog.
 ```
 
 Prints per-slide metrics — line count, first-line offset, reference gap, width
-ratio, background error — and `--overlays` writes red/green onion-skin images
-(reference red, ours green, overlap yellow) so misalignment is visible at a
-glance.
+ratio, ink overlap, background error — and `--overlays` writes red/green
+onion-skin images (reference red, ours green, overlap yellow) so misalignment is
+visible at a glance. See [Checking a change](#checking-a-change).
 
 ### Tests
 
 ```bash
-./deps/bin/python -m pytest tests/ -q     # 245 tests, ~25s
+./deps/bin/python -m pytest tests/ -q     # 247 tests, ~27s
 ```
 
 Covers the text rules, wrap quality ("blockiness"), layout geometry against the
 real reference deck, hostile input (empty text, 150-character junk tokens,
-emoji, CJK, control characters), and all 66 books of the canon.
+emoji, CJK, control characters), and all 66 books of the canon. Tests that
+depend on glyph coverage assert the *contract* rather than a hardcoded verdict,
+so they hold under either font choice.
 
 ---
 
@@ -133,17 +136,71 @@ order-dependent, so pass the **whole passage in order** and let it run once.
 
 ## Fonts
 
-The template is set in **Neue Haas Grotesk Display Pro** — 55 Regular for verse
-text, 65 Medium for the reference line, 60pt, 72px leading. That font is
-commercial and not installed here, so **Helvetica Neue substitutes**.
+The template is set in **Neue Haas Grotesk Display Pro** — 55 Roman for verse
+text, 65 Medium for the reference line, 60pt, 72px leading, tracking 0, read
+straight out of the PSD.
 
-Helvetica Neue sets about 10% wider at the same size, so the renderer condenses
-horizontally by `1/1.10` to compensate. That brings the median per-line width
-ratio against the reference deck to **1.002**.
+Font selection is a list in `slidegen.py`, best first; the first choice whose
+files are all present wins, so installing the real font is the only step needed
+to use it:
 
-If you ever license the real font: install it, set `HORIZONTAL_SCALE = 1.0` and
-`FONT_PATH` in `slidegen.py`, and re-fit `TEXT_BOX_WIDTH` against the reference
-line counts. `compare.py` is how you check the result.
+| Choice | Files | Scale |
+|---|---|---|
+| Neue Haas Grotesk Display Pro | `~/Library/Fonts/NeueHaasDisplay{Roman,Mediu}.ttf` | 1.0 |
+| Helvetica Neue (substitute) | `/System/Library/Fonts/HelveticaNeue.ttc` idx 0 / 10 | 1/1.10 |
+
+The scale condenses rendered text horizontally. It exists only for the
+substitute — Helvetica Neue sets ~10% wider at the same size, so the reciprocal
+pulls line widths back onto the reference. With the real font it is `1.0`, text
+is drawn directly with no resample step, and it is both exact and sharper.
+
+`TEXT_BOX_WIDTH = 678` is the best-scoring width for **both** choices, so
+switching fonts needs no refit.
+
+### Kerning
+
+Pillow's basic layout engine positions each glyph by its bare advance width and
+ignores GPOS entirely. Photoshop kerns, so the reference deck is kerned and
+unkerned text runs measurably wide — about 0.3% on a typical line and up to
+1.3% on one full of kerned pairs, which is enough to move a line break.
+
+`slidegen` therefore reads the font's GPOS `kern` pairs itself and applies them
+in both measurement and drawing. Drawing per character at kerned offsets is
+safe because PIL's basic layout already places each glyph independently, so
+per-character drawing at the same offsets is pixel-identical to drawing the
+whole string — verified across the deck. Kerning is what takes per-line ink
+width from a median of 1.0033 against the deck to **1.0000**.
+
+Only `LookupType 2` (pair adjustment) is read, which is all Neue Haas uses.
+The legacy `kern` table that Helvetica Neue carries instead is deliberately
+ignored, so the substitute keeps the metrics its scale was fitted against.
+
+> Installing Pillow with **Raqm** would get kerning, shaping and bidi from
+> HarfBuzz for free and make this code unnecessary — but it needs Pillow built
+> from source against `libraqm`, which the plain wheel in `requirements.txt`
+> gives up.
+
+### Glyph coverage
+
+Neue Haas Grotesk Display Pro carries **432 glyphs and no Greek at all**;
+Helvetica Neue does have it. So a verse or point quoting a Greek word is
+refused by validation under the real font rather than rendered as tofu boxes.
+That is the safe failure, but it is a real difference worth knowing before a
+service. `find_unrenderable` is what reports it.
+
+### Checking a change
+
+`compare.py` is how you verify any of this. Its `iou` column — ink overlap with
+the reference deck — is the metric that sees letterform *shape* rather than
+just extent, and it is the one that showed the font swap mattered:
+
+| | width ratio | ink overlap |
+|---|---|---|
+| Helvetica Neue + 1/1.10 squeeze | 1.002 | 0.241 |
+| Neue Haas Grotesk + kerning | 1.002 | **0.511** |
+
+The width ratio is identical because the squeeze was fitted to make it so.
+Overlap more than doubled.
 
 ---
 
@@ -158,6 +215,7 @@ line counts. `compare.py` is how you check the result.
 | Line height | 72px (auto-leading 1.2 × 60) |
 | Reference gap | 143px below the last verse line |
 | Vertical placement | block centered, snapped to a 197 + 72k grid |
+| Reference budget | 741px (scrim, not the verse box) |
 | Max verse lines | 12 |
 
 ---
@@ -223,8 +281,11 @@ available to whoever is running ProPresenter without a hand-off:
 
 - Split an over-long verse across two slides instead of raising
   `SlideOverflowError` (nothing in John 17 comes close, but a long Psalm might)
-- Reference lines do not wrap, and `"Song of Solomon 8:14 ESV"` clears the box
-  by about a pixel — worth handling before it bites
+- The reference line still does not wrap. It is now budgeted against the scrim
+  (`REF_MAX_WIDTH`, 741px) rather than the narrower verse box, which is enough
+  for every reference in the canon — `"Song of Solomon 8:14 ESV"` is the
+  longest at 686px — but a long non-canonical reference is still reported
+  rather than handled
 - Poetry (Psalms) and short disconnected verses have no professional reference
   slides to validate against yet
 - A `--compress` flag, and PNG output for previewing
@@ -239,5 +300,5 @@ available to whoever is running ProPresenter without a hand-off:
 | `slidegen.py` | All generation: text rules, wrapping, layout, rendering |
 | `retrieve.py` | BibleGateway scraping — thin, disposable, expected to be replaced |
 | `compare.py` | Dev tool: diff generated slides against a reference deck |
-| `tests/` | 245 tests |
+| `tests/` | 247 tests |
 | `FORMATTING_NOTES.md` | How every constant was derived, and what is still open |

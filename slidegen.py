@@ -26,6 +26,7 @@ import math
 import os
 import re
 from functools import lru_cache
+from typing import NamedTuple
 
 from PIL import Image, ImageDraw, ImageFont
 
@@ -35,26 +36,93 @@ from PIL import Image, ImageDraw, ImageFont
 
 SLIDE_WIDTH, SLIDE_HEIGHT = 1920, 1080
 
-FONT_PATH = '/System/Library/Fonts/HelveticaNeue.ttc'
-FONT_INDEX_REGULAR = 0        # verse body -- stands in for NHaasGroteskDSPro-55Rg
-FONT_INDEX_MEDIUM = 10        # reference line -- stands in for -65Md
 FONT_SIZE = 60
 
-# The reference deck is set in NHaasGroteskDSPro (55 Regular for the verse, 65
-# Medium for the reference line, both 60pt, tracking 0 -- all read straight out
-# of the PSD). That font is not installed and is commercial, so Helvetica Neue
-# substitutes. Measured across the deck it sets ~10% wider, which is the only
-# remaining visible difference. Condensing by the reciprocal brings rendered
-# line widths back onto the reference. Set to 1.0 if the real font is ever
-# installed -- and re-fit TEXT_BOX_WIDTH, which compensates for it.
-HORIZONTAL_SCALE = 1 / 1.10
+# The reference deck is set in Neue Haas Grotesk Display Pro -- 55 Roman for the
+# verse, 65 Medium for the reference line, both 60pt, tracking 0, all read
+# straight out of the PSD.
+#
+# Candidates in preference order: (label, regular, medium, horizontal scale),
+# where each face is (path, collection index). The first whose files are all
+# present wins, so installing the real font is the only step needed to use it.
+#
+# The scale condenses rendered text horizontally. It exists only for the
+# substitute: Helvetica Neue sets ~10% wider than Neue Haas at the same size, so
+# the reciprocal pulls line widths back onto the reference. With the real font
+# it is 1.0 and text is drawn directly, which is both exact and sharper (no
+# resample step): measured against the deck, ink overlap roughly doubles.
+_USER_FONTS = os.path.expanduser('~/Library/Fonts')
+_HELVETICA = '/System/Library/Fonts/HelveticaNeue.ttc'
+
+#: weight name -> (Neue Haas filename, Helvetica Neue collection index).
+#: Helvetica has no plain Black, so 'black' falls back to its Bold.
+WEIGHTS = {
+    'roman': ('NeueHaasDisplayRoman.ttf', 0),
+    'medium': ('NeueHaasDisplayMediu.ttf', 10),
+    'bold': ('NeueHaasDisplayBold.ttf', 1),
+    'black': ('NeueHaasDisplayBlack.ttf', 1),
+}
+
+#: Verse body. The PSD specifies 55 Roman.
+VERSE_WEIGHT = 'roman'
+
+#: Reference line. The PSD specifies 65 Medium and the deck is set in it, which
+#: is why it reads heavier than the verse above it -- that contrast is the
+#: deck's own design, not an artifact. Raise to 'bold' or 'black' for a heavier
+#: line; nothing else needs adjusting, since cap height does not change with
+#: weight and REF_MAX_WIDTH has room for the widest reference in the canon at
+#: any of them.
+REFERENCE_WEIGHT = 'medium'
+
+#: Point slides: a short line of emphasis with no reference. Provisional --
+#: pending a reference example to measure against.
+POINT_WEIGHT = 'bold'
+
+
+def _font_choices(verse_weight, reference_weight):
+    """Font candidates, best first, for a pair of weight names."""
+    verse, reference = WEIGHTS[verse_weight], WEIGHTS[reference_weight]
+    return (
+        ('Neue Haas Grotesk Display Pro',
+         (os.path.join(_USER_FONTS, verse[0]), 0),
+         (os.path.join(_USER_FONTS, reference[0]), 0),
+         1.0),
+        ('Helvetica Neue (substitute)',
+         (_HELVETICA, verse[1]),
+         (_HELVETICA, reference[1]),
+         1 / 1.10),
+    )
+
+
+FONT_CHOICES = _font_choices(VERSE_WEIGHT, REFERENCE_WEIGHT)
+
+
+def _choose_fonts():
+    """First font choice whose files are all installed."""
+    for choice in FONT_CHOICES:
+        _, regular, medium, _ = choice
+        if os.path.exists(regular[0]) and os.path.exists(medium[0]):
+            return choice
+    return ('none', (None, 0), (None, 0), 1.0)
+
+
+FONT_NAME, _REGULAR_FACE, _MEDIUM_FACE, HORIZONTAL_SCALE = _choose_fonts()
+
+#: Kept as module constants because the glyph-coverage check and the tests both
+#: reach for the verse face by path.
+FONT_PATH, FONT_INDEX_REGULAR = _REGULAR_FACE
+FONT_PATH_MEDIUM, FONT_INDEX_MEDIUM = _MEDIUM_FACE
+
+#: True when rendering with the typeface the deck was actually set in.
+IS_REFERENCE_FONT = FONT_NAME == FONT_CHOICES[0][0]
 
 LEFT_MARGIN = 91
 TEXT_BOX_WIDTH = 678          # fitted against the reference deck's line counts
-                              # in post-scale space: 25/26 verses match
+                              # in post-scale space: 24/26 verses match, and the
+                              # same value is best-scoring for both font choices
 LINE_HEIGHT = 72              # measured line-top delta
 REF_GAP = 143                 # last verse line top -> reference line top
-REF_CAP_HEIGHT = 44           # reference line ink height
+REF_CAP_HEIGHT = 45           # reference line ink height
 
 # The reference deck snaps the first line's ink top to this grid rather than
 # centering freely, so a block's vertical position is quantized.
@@ -71,6 +139,25 @@ GRADIENT_PROFILE = (
     77, 52, 25, 5, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 )
 GRADIENT_PROFILE_STEP = 64
+
+#: Minimum scrim alpha for white text to stay comfortably legible. 100/207 is
+#: about half the scrim's peak opacity.
+LEGIBLE_ALPHA = 100
+
+
+def _scrim_limit(min_alpha=LEGIBLE_ALPHA):
+    """Rightmost x where the scrim is still at least `min_alpha` opaque."""
+    dark = [i for i, alpha in enumerate(GRADIENT_PROFILE) if alpha >= min_alpha]
+    return max(dark) * GRADIENT_PROFILE_STEP
+
+
+#: The reference line is set on one line and never wrapped, so it needs its own
+#: budget rather than the verse box's. TEXT_BOX_WIDTH was fitted to reproduce
+#: the deck's *verse* line counts and is narrower than the scrim; the longest
+#: reference in the canon ("Song of Solomon 8:14 ESV") overruns it by 8px in
+#: Neue Haas while still sitting well inside legible background. Measuring the
+#: scrim instead of reusing the verse box is what makes that a non-issue.
+REF_MAX_WIDTH = _scrim_limit() - LEFT_MARGIN
 
 OPEN_QUOTE = '“'         # "
 CLOSE_QUOTE = '”'        # "
@@ -186,7 +273,7 @@ def _font_charset():
         from fontTools.ttLib import TTCollection, TTFont
     except ImportError:
         return None
-    if not os.path.exists(FONT_PATH):
+    if not FONT_PATH or not os.path.exists(FONT_PATH):
         return None
     try:
         if FONT_PATH.lower().endswith('.ttc'):
@@ -460,40 +547,180 @@ def make_gradient(width=SLIDE_WIDTH, height=SLIDE_HEIGHT):
     return row.resize((width, height))
 
 
+class Face(NamedTuple):
+    """
+    A PIL font plus the kerning PIL cannot apply on its own.
+
+    Pillow's basic layout engine positions each glyph by its bare advance
+    width, ignoring GPOS entirely. Photoshop kerns, so the reference deck is
+    kerned and unkerned text runs measurably wide -- about 0.3% on a typical
+    line and up to 1.3% on one full of kerned pairs, which is enough to move a
+    line break. `kerning` carries what is needed to close that gap; it is None
+    when the font has no GPOS kerning or fontTools is unavailable, in which
+    case everything below degrades to plain PIL behaviour.
+    """
+    font: object
+    kerning: object = None
+
+
+class _Kerning(NamedTuple):
+    pairs: dict        # (glyph name, glyph name) -> advance delta, font units
+    upem: int          # units per em, for scaling to pixels
+    cmap: dict         # codepoint -> glyph name
+
+
+@lru_cache(maxsize=4)
+def _load_kerning(path, index):
+    """
+    Pair kerning from the font's GPOS 'kern' feature, or None.
+
+    Only LookupType 2 (pair adjustment) is read, which is all Neue Haas uses
+    and all that matters for Latin text. Contextual kerning, and the legacy
+    'kern' table that older fonts such as Helvetica Neue carry instead, are
+    both ignored -- they would change metrics the layout constants were fitted
+    against without measurably improving the match.
+    """
+    try:
+        from fontTools.ttLib import TTCollection, TTFont
+    except ImportError:
+        return None
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        tt = (TTCollection(path).fonts[index] if path.lower().endswith('.ttc')
+              else TTFont(path))
+        if 'GPOS' not in tt:
+            return None
+        gpos = tt['GPOS'].table
+        wanted = set()
+        for record in gpos.FeatureList.FeatureRecord:
+            if record.FeatureTag == 'kern':
+                wanted.update(record.Feature.LookupListIndex)
+
+        pairs = {}
+        for i in sorted(wanted):
+            lookup = gpos.LookupList.Lookup[i]
+            if lookup.LookupType != 2:
+                continue
+            for sub in lookup.SubTable:
+                if sub.Format == 1:
+                    _read_pairs_by_glyph(sub, pairs)
+                elif sub.Format == 2:
+                    _read_pairs_by_class(sub, pairs)
+        if not pairs:
+            return None
+        return _Kerning(pairs, tt['head'].unitsPerEm, tt.getBestCmap())
+    except Exception:
+        return None
+
+
+def _read_pairs_by_glyph(sub, pairs):
+    """PairPos format 1: explicit first-glyph -> second-glyph adjustments."""
+    for first, pairset in zip(sub.Coverage.glyphs, sub.PairSet):
+        for record in pairset.PairValueRecord:
+            delta = getattr(record.Value1, 'XAdvance', 0)
+            if delta:
+                pairs[(first, record.SecondGlyph)] = delta
+
+
+def _read_pairs_by_class(sub, pairs):
+    """
+    PairPos format 2: adjustments between glyph *classes*.
+
+    Expanded to explicit pairs once, at load, so lookup stays a dict hit per
+    character. Format 1 wins on conflict, matching OpenType subtable order.
+    """
+    by_first = {}
+    for glyph in sub.Coverage.glyphs:
+        by_first.setdefault(sub.ClassDef1.classDefs.get(glyph, 0), []).append(glyph)
+    by_second = {}
+    for glyph, cls in sub.ClassDef2.classDefs.items():
+        by_second.setdefault(cls, []).append(glyph)
+
+    for i, class1 in enumerate(sub.Class1Record):
+        if i not in by_first:
+            continue
+        for j, class2 in enumerate(class1.Class2Record):
+            delta = getattr(class2.Value1, 'XAdvance', 0)
+            if not delta:
+                continue
+            for first in by_first[i]:
+                for second in by_second.get(j, ()):
+                    pairs.setdefault((first, second), delta)
+
+
+def kern_width(text, kerning, size=FONT_SIZE):
+    """Total kerning adjustment for `text`, in pixels. Negative tightens."""
+    if kerning is None or len(text) < 2:
+        return 0.0
+    names = [kerning.cmap.get(ord(ch)) for ch in text]
+    units = sum(kerning.pairs.get(pair, 0)
+                for pair in zip(names, names[1:])
+                if pair[0] and pair[1])
+    return units * size / kerning.upem
+
+
 @lru_cache(maxsize=4)
 def load_fonts(size=FONT_SIZE):
     """
-    (verse_font, reference_font). Falls back to PIL's bitmap default only if
-    Helvetica Neue is missing, which would make output non-reference-matching
-    but keeps the pipeline runnable.
+    (verse_face, reference_face), each a Face.
+
+    Falls back to PIL's bitmap default only if no configured font is installed,
+    which makes output non-reference-matching but keeps the pipeline runnable.
     """
-    if os.path.exists(FONT_PATH):
+    if FONT_PATH and os.path.exists(FONT_PATH):
         try:
             return (
-                ImageFont.truetype(FONT_PATH, size, index=FONT_INDEX_REGULAR),
-                ImageFont.truetype(FONT_PATH, size, index=FONT_INDEX_MEDIUM),
+                Face(ImageFont.truetype(FONT_PATH, size, index=FONT_INDEX_REGULAR),
+                     _load_kerning(FONT_PATH, FONT_INDEX_REGULAR)),
+                Face(ImageFont.truetype(FONT_PATH_MEDIUM, size,
+                                        index=FONT_INDEX_MEDIUM),
+                     _load_kerning(FONT_PATH_MEDIUM, FONT_INDEX_MEDIUM)),
             )
         except OSError:
             pass
-    fallback = ImageFont.load_default()
+    fallback = Face(ImageFont.load_default())
     return fallback, fallback
+
+
+def _as_face(font):
+    """Accept a Face or a bare PIL font, so callers may pass either."""
+    return font if isinstance(font, Face) else Face(font)
 
 
 def text_measurer(font, scale=None):
     """
     A `measure(str) -> float` callable for the wrap functions.
 
-    Widths are reported in *rendered* space, i.e. after HORIZONTAL_SCALE, so
-    wrapping and TEXT_BOX_WIDTH both talk about the pixels that end up on the
-    slide rather than the font's natural advance widths.
+    Widths are reported in *rendered* space, i.e. kerned and then scaled by
+    HORIZONTAL_SCALE, so wrapping and TEXT_BOX_WIDTH both talk about the pixels
+    that end up on the slide rather than the font's bare advance widths.
     """
+    face = _as_face(font)
     scale = HORIZONTAL_SCALE if scale is None else scale
     scratch = ImageDraw.Draw(Image.new('RGBA', (1, 1)))
+    size = getattr(face.font, 'size', FONT_SIZE)
 
     def measure(text):
-        return scratch.textlength(text, font=font) * scale
+        natural = scratch.textlength(text, font=face.font)
+        return (natural + kern_width(text, face.kerning, size)) * scale
 
     return measure
+
+
+def find_overlong_reference(reference):
+    """
+    Report a reference line too wide to sit on legible background.
+
+    Lives with the other find_* checks conceptually but has to be defined here
+    because it needs font metrics. Returns a list of (kind, detail) pairs so it
+    composes with find_artifacts and find_unrenderable in main.validate.
+    """
+    _, ref_face = load_fonts()
+    width = text_measurer(ref_face)(reference)
+    if width <= REF_MAX_WIDTH:
+        return []
+    return [('reference-too-wide', f'{width:.0f}px > {REF_MAX_WIDTH}px')]
 
 
 def _ink_offset(font):
@@ -506,29 +733,58 @@ def _ink_offset(font):
     return font.getbbox('H')[1]
 
 
+def _draw_line(draw, left, top, text, face):
+    """
+    Draw one run of text at (left, top), applying kerning if the face has it.
+
+    Without kerning this is a single PIL call. With it, glyphs are placed one
+    at a time at running kerned positions. That is safe to do: PIL's basic
+    layout engine already positions each glyph independently by its advance
+    width, so drawing per character at the same accumulated offsets is
+    pixel-identical to drawing the whole string (verified over the deck), and
+    adding the kern deltas is then the only difference.
+    """
+    if face.kerning is None:
+        draw.text((left, top), text, fill=(255, 255, 255, 255), font=face.font)
+        return
+
+    size = getattr(face.font, 'size', FONT_SIZE)
+    names = [face.kerning.cmap.get(ord(ch)) for ch in text]
+    x = float(left)
+    for i, ch in enumerate(text):
+        draw.text((x, top), ch, fill=(255, 255, 255, 255), font=face.font)
+        x += draw.textlength(ch, font=face.font)
+        if i + 1 < len(text) and names[i] and names[i + 1]:
+            x += (face.kerning.pairs.get((names[i], names[i + 1]), 0)
+                  * size / face.kerning.upem)
+
+
 def _draw_text(img, left, ink_top, text, font, scale=None):
     """
     Draw one line with its ink top at `ink_top`, condensed by `scale`.
 
     Only the horizontal axis is scaled, so cap height, baseline and line
     spacing are untouched -- the same thing Photoshop's HorizontalScale does.
-    Text is drawn to its own transparent layer, resampled, then composited,
-    because PIL cannot scale glyphs while drawing.
+    At scale 1.0 the text is drawn straight onto the slide; otherwise it goes
+    to its own transparent layer, is resampled, then composited, because PIL
+    cannot scale glyphs while drawing.
     """
+    face = _as_face(font)
     scale = HORIZONTAL_SCALE if scale is None else scale
-    top = ink_top - _ink_offset(font)
+    top = ink_top - _ink_offset(face.font)
 
     if scale == 1.0:
-        ImageDraw.Draw(img).text((left, top), text, fill=(255, 255, 255, 255),
-                                 font=font)
+        _draw_line(ImageDraw.Draw(img), left, top, text, face)
         return
 
-    ascent, descent = font.getmetrics()
-    natural = ImageDraw.Draw(Image.new('RGBA', (1, 1))).textlength(text, font=font)
+    ascent, descent = face.font.getmetrics()
+    scratch = ImageDraw.Draw(Image.new('RGBA', (1, 1)))
+    natural = scratch.textlength(text, font=face.font)
+    natural += kern_width(text, face.kerning, getattr(face.font, 'size', FONT_SIZE))
     width, height = max(1, math.ceil(natural) + 4), ascent + descent + 4
 
     layer = Image.new('RGBA', (width, height), (0, 0, 0, 0))
-    ImageDraw.Draw(layer).text((0, 0), text, fill=(255, 255, 255, 255), font=font)
+    _draw_line(ImageDraw.Draw(layer), 0, 0, text, face)
     layer = layer.resize((max(1, round(width * scale)), height), Image.LANCZOS)
     img.alpha_composite(layer, (left, top))
 

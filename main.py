@@ -30,6 +30,8 @@ def validate(verses):
             problems.append(f'{ref}: {kind} {snippet!r}')
         for kind, snippet in slidegen.find_unrenderable(text):
             problems.append(f'{ref}: {kind} {snippet}')
+        for kind, snippet in slidegen.find_overlong_reference(ref):
+            problems.append(f'{ref}: {kind} {snippet}')
         try:
             slidegen.layout_slide(text, ref)
         except slidegen.EmptyVerseError:

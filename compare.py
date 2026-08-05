@@ -5,16 +5,22 @@ Diff generated slides against a reference deck.
     python compare.py slides "John 17"
     python compare.py slides "John 17" --overlays out/
 
-A raw pixel diff of two slides is nearly useless here: the substituted font is
-a different width, so glyphs drift progressively across every line and the diff
-lights up everywhere without saying why. These metrics separate the things that
-*should* match exactly from the one thing that cannot:
+A raw pixel diff of two slides is nearly useless here: a difference of a pixel
+or two at the start of a line drifts progressively across it, so the diff lights
+up everywhere without saying why. These metrics separate the things that *should*
+match exactly from the ones that cannot:
 
   lines        line count -- must match
   top          first-line ink top delta, px -- must be 0
   ref_gap      reference line offset -- must match REF_GAP
-  width        mean per-line ink width ratio, ours/theirs -- 1.00 is a
-               perfect match; ~1.10 is the Helvetica Neue substitution
+  width        median per-line ink width ratio, ours/theirs -- 1.00 is a
+               perfect match; ~1.10 would be an uncompensated substitute font
+  iou          ink overlap with the reference, intersection over union. The
+               one metric that sees letterform shape rather than just extent:
+               width can read 1.00 while every glyph is the wrong shape. ~0.24
+               was the compensated Helvetica substitute, ~0.51 the real Neue
+               Haas. It cannot reach 1.0 -- antialiasing and sub-pixel
+               placement differ -- so read it comparatively.
   bg_rms       RMS difference of the gradient outside all text -- isolates the
                background from the type, so it must be ~0
 
@@ -102,6 +108,9 @@ def compare_slide(our_path, ref_path):
     median = ordered[len(ordered) // 2] if ordered else None
     spread = (max(ratios) - min(ratios)) if len(ratios) > 1 else 0.0
 
+    union = (our_mask | ref_mask).sum()
+    iou = float((our_mask & ref_mask).sum() / union) if union else 0.0
+
     return {
         'our_lines': len(our_verse),
         'ref_lines': len(ref_verse),
@@ -110,6 +119,7 @@ def compare_slide(our_path, ref_path):
         'ref_ref_gap': (ref_lines[-1][0] - ref_verse[-1][0]) if ref_verse else None,
         'width_ratio': median,
         'width_spread': spread,
+        'ink_iou': iou,
         'bg_rms': bg_rms,
     }
 
@@ -164,8 +174,8 @@ def main(argv=None):
         os.makedirs(args.overlays, exist_ok=True)
 
     print(f'{"v":>3} {"lines":>11} {"top":>5} {"gap":>9} '
-          f'{"width":>7} {"spread":>7} {"bg_rms":>7}  notes')
-    ratios, mismatched, diverged = [], [], []
+          f'{"width":>7} {"spread":>7} {"iou":>6} {"bg_rms":>7}  notes')
+    ratios, ious, mismatched, diverged = [], [], [], []
     for verse in shared:
         m = compare_slide(ours[verse], theirs[verse])
         notes = []
@@ -180,6 +190,7 @@ def main(argv=None):
             notes.append(f'off grid by {m["top_delta"]:+d}px')
         if m['width_ratio']:
             ratios.append(m['width_ratio'])
+        ious.append(m['ink_iou'])
         print(
             f'{verse:>3} '
             f'{m["our_lines"]:>5}/{m["ref_lines"]:<5} '
@@ -187,6 +198,7 @@ def main(argv=None):
             f'{m["our_ref_gap"]:>4}/{m["ref_ref_gap"]:<4} '
             f'{m["width_ratio"] or 0:>7.3f} '
             f'{m["width_spread"]:>7.3f} '
+            f'{m["ink_iou"]:>6.3f} '
             f'{m["bg_rms"]:>7.2f}  '
             f'{"; ".join(notes)}'
         )
@@ -204,6 +216,10 @@ def main(argv=None):
         ordered = sorted(ratios)
         print(f'median width ratio {ordered[len(ordered) // 2]:.3f} '
               f'(1.000 = exact; >1 means our type sets wider)')
+    if ious:
+        ordered = sorted(ious)
+        print(f'median ink overlap {ordered[len(ordered) // 2]:.3f} '
+              f'(higher is better; compare runs rather than reading absolutely)')
 
 
 if __name__ == '__main__':

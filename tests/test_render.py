@@ -219,8 +219,9 @@ class TestShortContent:
 
 class TestHorizontalScale:
     """
-    The condense factor compensating for Helvetica Neue standing in for
-    NHaasGroteskDSPro. See FORMATTING_NOTES.md 3e.
+    The condense factor that compensates for a substitute font. It is 1.0 when
+    the real Neue Haas is installed, so these assert the mechanism holds at
+    whatever scale is active rather than assuming a particular one.
     """
 
     def test_measurer_reports_scaled_widths(self):
@@ -300,3 +301,171 @@ class TestGenerateSlides:
 
     def test_empty_passage(self, tmp_path):
         assert slidegen.generate_slides([], output_dir=str(tmp_path)) == []
+
+
+class TestFontSelection:
+    """Which typeface gets used, and the contract each choice must honour."""
+
+    def test_a_font_was_resolved(self):
+        assert slidegen.FONT_NAME != 'none'
+        assert os.path.exists(slidegen.FONT_PATH)
+        assert os.path.exists(slidegen.FONT_PATH_MEDIUM)
+
+    def test_choices_are_ordered_best_first(self):
+        """The real typeface must outrank the substitute, or installing it
+        would silently do nothing."""
+        assert slidegen.FONT_CHOICES[0][0].startswith('Neue Haas')
+        assert slidegen.FONT_CHOICES[0][3] == 1.0
+
+    def test_resolution_picks_the_first_installed_choice(self):
+        expected = next(c for c in slidegen.FONT_CHOICES
+                        if os.path.exists(c[1][0]) and os.path.exists(c[2][0]))
+        assert slidegen.FONT_NAME == expected[0]
+        assert slidegen.HORIZONTAL_SCALE == expected[3]
+
+    def test_verse_and_reference_faces_are_distinct(self):
+        """The deck sets the reference line in a heavier weight; if the two
+        faces collapse to one, that distinction is silently lost."""
+        verse, ref = slidegen.load_fonts()
+        measure_v = slidegen.text_measurer(verse)
+        measure_r = slidegen.text_measurer(ref)
+        assert measure_r('Handgloves') > measure_v('Handgloves')
+
+    def test_scale_is_one_only_for_the_reference_font(self):
+        assert (slidegen.HORIZONTAL_SCALE == 1.0) == slidegen.IS_REFERENCE_FONT
+
+
+class TestKerning:
+    """
+    PIL's basic layout ignores GPOS, so slidegen applies pair kerning itself.
+    These pin the parts that could silently go wrong.
+    """
+
+    def test_the_reference_font_supplies_kerning(self):
+        if not slidegen.IS_REFERENCE_FONT:
+            pytest.skip('substitute font in use')
+        verse, ref = slidegen.load_fonts()
+        assert verse.kerning is not None and verse.kerning.pairs
+        assert ref.kerning is not None and ref.kerning.pairs
+
+    def test_missing_font_yields_no_kerning(self):
+        assert slidegen._load_kerning('/no/such/font.ttf', 0) is None
+
+    def test_kerning_is_ignored_for_the_substitute(self):
+        """Helvetica Neue carries only a legacy 'kern' table, which is
+        deliberately not read -- its scale was fitted without it."""
+        path, index = slidegen.FONT_CHOICES[1][1]
+        if not os.path.exists(path):
+            pytest.skip('Helvetica Neue not present')
+        assert slidegen._load_kerning(path, index) is None
+
+    def test_kern_width_is_zero_without_kerning_data(self):
+        assert slidegen.kern_width('AVATAR', None) == 0.0
+
+    def test_kern_width_needs_two_characters(self):
+        verse, _ = slidegen.load_fonts()
+        assert slidegen.kern_width('', verse.kerning) == 0.0
+        assert slidegen.kern_width('A', verse.kerning) == 0.0
+
+    def test_known_pairs_tighten(self):
+        verse, _ = slidegen.load_fonts()
+        if verse.kerning is None:
+            pytest.skip('no kerning data')
+        # "AV" and "Yo" are the canonical kerned pairs in a grotesk.
+        assert slidegen.kern_width('AV', verse.kerning) < 0
+        assert slidegen.kern_width('Yo', verse.kerning) < 0
+
+    def test_unkerned_pairs_are_untouched(self):
+        verse, _ = slidegen.load_fonts()
+        if verse.kerning is None:
+            pytest.skip('no kerning data')
+        assert slidegen.kern_width('nn', verse.kerning) == 0.0
+
+    def test_kerning_narrows_measured_text(self):
+        verse, _ = slidegen.load_fonts()
+        if verse.kerning is None:
+            pytest.skip('no kerning data')
+        text = 'AVATAR, Yesterday'
+        kerned = slidegen.text_measurer(verse)(text)
+        plain = slidegen.text_measurer(slidegen.Face(verse.font))(text)
+        assert kerned < plain
+
+    def test_drawing_without_kerning_matches_pil_exactly(self):
+        """
+        The invariant that makes per-character drawing safe: with no kern
+        deltas it must reproduce PIL's own whole-string layout pixel for pixel,
+        so kerning is the *only* thing the custom path changes.
+        """
+        from PIL import ImageDraw
+
+        verse, _ = slidegen.load_fonts()
+        white = (255, 255, 255, 255)
+        for text in ('When Jesus had spoken', 'AVATAR Yesterday, Wow.'):
+            native = Image.new('RGBA', (1400, 120), (0, 0, 0, 0))
+            ImageDraw.Draw(native).text((10, 20), text, fill=white, font=verse.font)
+
+            ours = Image.new('RGBA', (1400, 120), (0, 0, 0, 0))
+            slidegen._draw_line(ImageDraw.Draw(ours), 10, 20, text,
+                                slidegen.Face(verse.font))
+
+            assert np.array_equal(np.array(native), np.array(ours)), text
+
+    def test_measured_width_matches_what_is_drawn(self):
+        """Measurement and rendering must agree, or wrapping is fiction."""
+        verse, _ = slidegen.load_fonts()
+        text = 'AVATAR, Yesterday we saw'
+        predicted = slidegen.text_measurer(verse)(text)
+        img = slidegen.compose_slide(text, 'Book 1:1 ESV', max_width=10_000)
+        left, right, _, _ = ink_bounds(img)
+        assert abs((right - left) - predicted) <= 4
+
+    def test_face_accepts_a_bare_pil_font(self):
+        """Library callers passing a raw PIL font must keep working."""
+        verse, _ = slidegen.load_fonts()
+        assert slidegen.text_measurer(verse.font)('abc') > 0
+        assert slidegen._as_face(verse.font).kerning is None
+        assert slidegen._as_face(verse) is verse
+
+
+class TestReferenceWeight:
+    """
+    The reference line is set heavier than the verse. That contrast is the
+    deck's own design (the PSD specifies 65 Medium), and the weight is meant to
+    be swappable without disturbing any layout constant.
+    """
+
+    def test_default_matches_the_psd(self):
+        assert slidegen.REFERENCE_WEIGHT == 'medium'
+        assert slidegen.VERSE_WEIGHT == 'roman'
+
+    def test_reference_is_heavier_than_the_verse(self):
+        verse, ref = slidegen.load_fonts()
+        word = 'Handgloves'
+        assert (slidegen.text_measurer(ref)(word)
+                > slidegen.text_measurer(verse)(word))
+
+    @pytest.mark.parametrize('weight', sorted(slidegen.WEIGHTS))
+    def test_any_weight_leaves_layout_constants_valid(self, weight):
+        """
+        Cap height must not move with weight, or block_top would need refitting
+        per weight; and the longest reference in the canon must still fit.
+        """
+        choices = slidegen._font_choices(slidegen.VERSE_WEIGHT, weight)
+        path, index = next((c[2] for c in choices if os.path.exists(c[2][0])),
+                           (None, 0))
+        if path is None:
+            pytest.skip(f'no font installed for weight {weight}')
+
+        from PIL import ImageFont
+        font = ImageFont.truetype(path, slidegen.FONT_SIZE, index=index)
+        face = slidegen.Face(font, slidegen._load_kerning(path, index))
+
+        img = slidegen.make_gradient().copy()
+        slidegen._draw_text(img, slidegen.LEFT_MARGIN, 400, 'John 17:1 ESV', face)
+        groups = ink_rows(img)
+        assert groups, weight
+        height = groups[0][1] - groups[0][0] + 1
+        assert abs(height - slidegen.REF_CAP_HEIGHT) <= 2, f'{weight}: {height}px'
+
+        widest = slidegen.text_measurer(face)('Song of Solomon 8:14 ESV')
+        assert widest <= slidegen.REF_MAX_WIDTH, f'{weight}: {widest:.0f}px'

@@ -86,23 +86,30 @@ class TestOversizedTokens:
 
 
 class TestUnicode:
+    #: Covered by any Latin text face, so the verdict is the same
+    #: whichever font choice is installed.
     RENDERABLE = [
         ('Café and naïve résumé', 'latin-1 accents'),
         ('áêĩõü combining forms', 'accented vowels'),
-        ('Alpha βeta λambda', 'greek letters'),
         ('“curly” and ‘nested’ quotes', 'typographic quotes'),
         ('em—dash and en–dash', 'dashes'),
         ('ellipsis… and bullet •', 'punctuation'),
         ('a b non-breaking space', 'nbsp'),
-        # Helvetica Neue does cover these, so they must not be flagged.
-        ('Ω μ π ∑ ∞ ≈', 'greek and maths symbols'),
     ]
 
+    #: Absent from every font this project will load.
     UNRENDERABLE = [
         ('太初有道，道與神同在', 'CJK'),
         ('בְּרֵאשִׁית בָּרָא', 'Hebrew'),
         ('Praise 🙏 the Lord 🎉', 'emoji'),
         ('family 👨‍👩‍👧‍👦 here', 'emoji with ZWJ'),
+    ]
+
+    #: Coverage differs between the reference font and the substitute, so
+    #: the verdict is not hardcoded -- only the contract is checked.
+    FONT_DEPENDENT = [
+        ('Alpha βeta λambda', 'greek letters'),
+        ('Ω μ π ∑ ∞ ≈', 'greek and maths symbols'),
     ]
 
     @pytest.mark.parametrize('text, why',
@@ -121,6 +128,33 @@ class TestUnicode:
         problems = slidegen.find_unrenderable(text)
         assert problems, why
         assert all(k == 'unrenderable-character' for k, _ in problems)
+
+    @pytest.mark.parametrize('text, why',
+                             FONT_DEPENDENT, ids=[c[1] for c in FONT_DEPENDENT])
+    def test_report_matches_what_the_installed_font_covers(self, text, why):
+        """
+        Whatever the font covers, the report must agree exactly: no silent
+        tofu, and no false alarm on a character that would have drawn fine.
+        """
+        slidegen.layout_slide(text, REF)
+        covered = slidegen._font_charset()
+        if covered is None:
+            pytest.skip('font charset not inspectable')
+        expected = {ch for ch in text
+                    if not ch.isspace() and ord(ch) not in covered}
+        reported = {detail.split(' U+')[0] for _, detail in
+                    slidegen.find_unrenderable(text)}
+        assert reported == {repr(ch) for ch in expected}, why
+
+    def test_the_reference_font_has_no_greek(self):
+        """
+        Worth pinning: Neue Haas Grotesk Display Pro ships no Greek, so a verse
+        or a point quoting a Greek word is refused rather than tofued. The
+        substitute does cover it, which is why this is conditional.
+        """
+        if not slidegen.IS_REFERENCE_FONT:
+            pytest.skip('substitute font in use')
+        assert slidegen.find_unrenderable('the word λόγος here')
 
     def test_each_bad_character_reported_once(self):
         problems = slidegen.find_unrenderable('🙏🙏🙏🎉🎉')
@@ -208,26 +242,35 @@ class TestBibleBookReferences:
         assert slidegen.slide_filename('Song of Solomon 2:1 ESV', 1) == \
             'Song_of_Solomon_2_001.tif'
 
-    def test_every_book_reference_fits_the_box(self):
+    def test_every_book_reference_fits_the_scrim(self):
         """
         The reference line is drawn on one line without wrapping, so every book
-        name has to fit. "Song of Solomon 8:14 ESV" is the longest reference in
-        the canon and clears the 678px box by about a pixel -- so this is a real
-        constraint, not a formality, and it will bite if the box ever narrows.
+        name has to fit REF_MAX_WIDTH -- the scrim, not the narrower verse box.
         """
-        _, ref_font = slidegen.load_fonts()
-        measure_ref = slidegen.text_measurer(ref_font)
         too_wide = [
-            (book, round(measure_ref(f'{book} 3:16 ESV')))
+            (book, slidegen.find_overlong_reference(f'{book} 3:16 ESV'))
             for book in BIBLE_BOOKS
-            if measure_ref(f'{book} 3:16 ESV') > slidegen.TEXT_BOX_WIDTH
+            if slidegen.find_overlong_reference(f'{book} 3:16 ESV')
         ]
         assert not too_wide, too_wide
 
     def test_longest_real_reference_in_the_canon_fits(self):
+        """
+        "Song of Solomon 8:14 ESV" is the longest reference in the canon. It
+        overruns TEXT_BOX_WIDTH, which is why the reference line is budgeted
+        against the scrim instead -- a real constraint, not a formality.
+        """
         _, ref_font = slidegen.load_fonts()
         width = slidegen.text_measurer(ref_font)('Song of Solomon 8:14 ESV')
-        assert width <= slidegen.TEXT_BOX_WIDTH, f'{width:.0f}px'
+        assert width > slidegen.TEXT_BOX_WIDTH, 'the verse box would be enough'
+        assert width <= slidegen.REF_MAX_WIDTH, f'{width:.0f}px'
+        assert slidegen.find_overlong_reference('Song of Solomon 8:14 ESV') == []
+
+    def test_an_absurd_reference_is_reported(self):
+        """The check has to actually fire, or it is decoration."""
+        problems = slidegen.find_overlong_reference(
+            'The Second Epistle to the Thessalonians 3:16 ESV')
+        assert problems and problems[0][0] == 'reference-too-wide'
 
     def test_high_chapter_and_verse_numbers(self):
         assert slidegen.slide_filename('Psalm 119:176 ESV', 1) == \
