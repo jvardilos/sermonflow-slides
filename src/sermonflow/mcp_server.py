@@ -10,11 +10,17 @@ slides in one tool call, or preview the wrapped text first. Two tools:
 
 Both surface validation problems (scrape residue, a too-long verse, a glyph the
 font cannot draw) in their result rather than only on a log, so the model can
-decide what to do. Run over stdio via the `sermonflow-mcp` console script.
+decide what to do.
+
+Run it with the `sermonflow-mcp` console script. By default it speaks stdio,
+which is what a local host (Claude Code/Desktop, or an agent SDK) spawns. Pass
+`--http` to serve streamable HTTP instead, for remote hosts such as ChatGPT
+connectors that connect to a URL rather than launching a process.
 """
 
 from __future__ import annotations
 
+import argparse
 from typing import Any
 
 from mcp.server import MCPServer
@@ -98,8 +104,29 @@ def generate_slides(
 
 
 def main() -> None:
-    """Run the server over stdio (the `sermonflow-mcp` console script)."""
-    mcp.run()
+    """
+    Run the server (the `sermonflow-mcp` console script).
+
+    stdio by default -- what a local host spawns. `--http` serves streamable
+    HTTP on host:port for remote hosts that connect to a URL.
+    """
+    parser = argparse.ArgumentParser(
+        prog="sermonflow-mcp",
+        description="MCP server exposing sermonflow's slide tools.",
+    )
+    parser.add_argument(
+        "--http",
+        action="store_true",
+        help="serve streamable HTTP instead of stdio (for remote hosts)",
+    )
+    parser.add_argument("--host", default="127.0.0.1", help="HTTP host (default: 127.0.0.1)")
+    parser.add_argument("--port", type=int, default=8000, help="HTTP port (default: 8000)")
+    args = parser.parse_args()
+
+    if args.http:
+        mcp.run(transport="streamable-http", host=args.host, port=args.port)
+    else:
+        mcp.run()
 
 
 if __name__ == "__main__":

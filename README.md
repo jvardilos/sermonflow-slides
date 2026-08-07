@@ -51,43 +51,111 @@ This installs two console commands, `sermonflow` and `sermonflow-mcp`.
 
 ---
 
-## Hooking it into an LLM (MCP)
+## Connect it to a model (MCP)
 
-The reason this exists as a package: an assistant that speaks the **Model
-Context Protocol** can go from a reference to finished slides in one tool call.
-Point your MCP client at the installed `sermonflow-mcp` command.
-
-**Claude Desktop / Claude Code** — add to the MCP servers config
-(`claude_desktop_config.json`, or `claude mcp add`):
-
-```json
-{
-  "mcpServers": {
-    "sermonflow-slides": {
-      "command": "/absolute/path/to/sermonflow-slides/deps/bin/sermonflow-mcp",
-      "env": { "ESV_API_KEY": "your-esv-api-key-optional" }
-    }
-  }
-}
-```
-
-Once connected, the model has two tools:
+The reason this is a package: any model that speaks the **Model Context
+Protocol** can go from a reference to finished slides in one tool call. The
+`sermonflow-mcp` command is a standard MCP server, so it drops into any
+MCP-capable host — from a local open model like **gpt-oss** to the **ChatGPT**
+app. The model gets two tools:
 
 | Tool | What it does |
 |---|---|
 | `preview_slides(reference, translation="ESV")` | Wrapped lines per verse, **nothing written** — the safe look before committing files. Returns any validation problems. |
 | `generate_slides(reference, translation="ESV", output_dir="./slides", strict=True)` | Fetch, validate and render to a folder. Returns the written paths, or the blocking problems if `strict` and the text isn't clean. |
 
-So a prompt like *"preview John 17, then render it to ~/sunday/slides"* becomes
-a `preview_slides` call the model reads back to you, then a `generate_slides`
-call — with the validation gate protecting the service from scrape residue
-landing on a screen.
+So *"preview John 17, then render it to ~/sunday/slides"* becomes a
+`preview_slides` call the model reads back to you, then a `generate_slides` call
+— the validation gate keeping scrape residue off the screen mid-service.
 
-Run it standalone (stdio) to sanity-check:
+### Two transports — pick by where the model runs
 
 ```bash
-./deps/bin/sermonflow-mcp      # starts the MCP server on stdio
+sermonflow-mcp            # stdio (default): a LOCAL host launches this process
+sermonflow-mcp --http     # streamable HTTP on 127.0.0.1:8000: a REMOTE host connects to a URL
 ```
+
+| Transport | Use when | Hosts |
+|---|---|---|
+| **stdio** (default) | the host runs on the same machine and can launch a process | Claude Code / Desktop, LM Studio, an OpenAI Agents-SDK agent (incl. local gpt-oss) |
+| **HTTP** (`--http`) | the host is remote and connects to a URL | ChatGPT connectors, OpenAI Responses API, any hosted agent |
+
+> **You don't keep the stdio server running yourself.** A local host *spawns its
+> own copy* on demand — you only register the command. Only the HTTP mode is a
+> long-lived server you run and hand out a URL for.
+
+### Local hosts (stdio)
+
+**Claude Code** — from the repo root:
+
+```bash
+claude mcp add sermonflow-slides -- "$(pwd)/deps/bin/sermonflow-mcp"
+# optional ESV API key:  claude mcp add sermonflow-slides --env ESV_API_KEY=... -- "$(pwd)/deps/bin/sermonflow-mcp"
+```
+
+**Claude Desktop** — `claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "sermonflow-slides": {
+      "command": "/absolute/path/to/deps/bin/sermonflow-mcp",
+      "env": { "ESV_API_KEY": "optional" }
+    }
+  }
+}
+```
+
+**A local open model (gpt-oss, Llama, …)** — the model doesn't speak MCP itself;
+you wrap it in an MCP-capable host. Easiest is the **OpenAI Agents SDK**, which
+launches the stdio server and hands the tools to *any* model, including a local
+gpt-oss served behind an OpenAI-compatible endpoint (Ollama / vLLM / LM Studio):
+
+```python
+from agents import Agent, Runner            # pip install openai-agents
+from agents.mcp import MCPServerStdio
+
+async def main():
+    async with MCPServerStdio(params={
+        "command": "/absolute/path/to/deps/bin/sermonflow-mcp",
+    }) as slides:
+        agent = Agent(
+            name="deck-builder",
+            model="gpt-oss:20b",              # or any OpenAI-compatible model id
+            mcp_servers=[slides],
+        )
+        print(await Runner.run(agent, "Preview John 17 and render it to ./out"))
+```
+
+LM Studio works too: add the same `command` to its `mcp.json`, then any model
+you load can call the tools.
+
+### Remote hosts (HTTP) — ChatGPT and hosted agents
+
+ChatGPT's **connectors / developer mode** attach to a *remote* MCP server, so
+run the HTTP transport and give ChatGPT its URL:
+
+```bash
+sermonflow-mcp --http --host 0.0.0.0 --port 8000     # serves MCP at http://<host>:8000/mcp
+```
+
+- **Locally, to try it:** put a tunnel in front (`ngrok http 8000`,
+  `cloudflared tunnel --url http://localhost:8000`) and add the resulting HTTPS
+  URL (…/mcp) as a connector in a fresh ChatGPT window.
+- **For real use:** deploy it behind HTTPS and put **auth** in front — the
+  server has none of its own, and `generate_slides` writes files, so don't
+  expose it open to the internet.
+- The **OpenAI Responses API** accepts the same server:
+  `tools=[{"type": "mcp", "server_url": "https://…/mcp", "server_label": "sermonflow"}]`.
+
+### Is my server up? (health check)
+
+`sermonflow-mcp` speaks stdio, so you can't just `curl` it. To confirm the
+handshake, tool list and a real call, run it as a client — the OpenAI Agents SDK
+snippet above does exactly that, or use the `mcp` SDK's `stdio_client` +
+`ClientSession` to `initialize()`, `list_tools()`, and `call_tool(...)`. A
+correct server reports name `sermonflow-slides`, version `0.2.0`, and both tools
+with their schemas.
 
 ---
 
@@ -236,21 +304,66 @@ showed the bundled Neue Haas (~0.51) beats a squeezed Helvetica substitute
 
 ---
 
-## Tests & types
+## Developing
+
+### Dev build
+
+The build backend is [Hatchling](https://hatch.pypa.io/) (modern, no
+`.egg-info`). A "dev build" is just an **editable install** — your source edits
+take effect immediately, no rebuild:
+
+```bash
+python3 -m venv deps
+./deps/bin/pip install -e '.[dev]'    # package + pytest, numpy, pyright
+```
+
+Add or drop a dependency by editing the `dependencies` list in
+`pyproject.toml`, then re-run that install. There is no `requirements.txt` —
+`pyproject.toml` is the single source of truth.
+
+### Everyday commands
 
 ```bash
 ./deps/bin/python -m pytest tests/ -q     # 278 tests, ~45s
 ./deps/bin/pyright                        # 0 errors; src is strict
+./deps/bin/sermonflow "John 17" --dry-run # run the CLI without rendering
 ```
 
-Tests cover the text rules, wrap quality ("blockiness"), layout geometry, hostile
-input (empty text, 150-character junk tokens, emoji, CJK, control characters),
-all 66 books of the canon, and the provider parsers (offline, against fixtures).
+Tests cover the text rules, wrap quality, layout geometry, hostile input (empty
+text, junk tokens, emoji, CJK, control chars), all 66 books of the canon, and
+the provider parsers (offline, against fixtures). The package source
+(`src/sermonflow/`) type-checks clean under **pyright strict** — set Pylance to
+strict in VS Code and the package reports nothing; tests and dev scripts run at a
+lightly relaxed level (see `[tool.pyright]` in `pyproject.toml`).
 
-The package source (`src/sermonflow/`) type-checks clean under **pyright strict**
-— set Pylance to strict in VS Code and the package reports nothing. Tests and dev
-scripts run at a lightly relaxed level (they lean on pytest fixtures and the
-imprecise Pillow/numpy stubs); see the `[tool.pyright]` config in `pyproject.toml`.
+### In VS Code
+
+The repo ships a `.vscode/` so the editor "just works":
+
+1. **Open the folder**, then when prompted, install the **recommended
+   extensions** (`.vscode/extensions.json`: Python, Pylance, debugpy,
+   Even Better TOML, and **Luna Paint**).
+2. **Select the interpreter**: it defaults to `./deps/bin/python` via
+   `settings.json`; if imports still read as "not found", run *Python: Select
+   Interpreter* → `./deps/bin/python` and reload. That's what makes Pylance
+   resolve Pillow / mcp / bs4.
+3. **Run & Debug (F5)** — `launch.json` gives you: the CLI (dry-run John 17), the
+   MCP server, and pytest (all / current file).
+4. **Build & test as tasks** — Ctrl+Shift+B runs the editable install;
+   *Terminal → Run Task* also lists pytest, pyright, and a wheel build
+   (`tasks.json`).
+5. **Open a rendered `slides/*.tif`** with **Luna Paint** (right-click →
+   *Open With*) — VS Code cannot show TIFFs natively.
+
+### Building a distributable
+
+```bash
+./deps/bin/python -m pip wheel . --no-deps -w dist     # -> dist/sermonflow_slides-0.2.0-*.whl
+```
+
+Install that wheel anywhere (or `pipx install .`) to put the `sermonflow` and
+`sermonflow-mcp` commands on `PATH` globally — handy so a model host config can
+reference `sermonflow-mcp` by name instead of an absolute venv path.
 
 ---
 
