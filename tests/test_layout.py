@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-import slidegen
+import sermonflow as slidegen
 from conftest import dummy_text
 
 #: line count -> first-line ink top, measured from `John 17 /*.tif`.

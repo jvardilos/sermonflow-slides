@@ -12,7 +12,7 @@ they are exact and font-independent. Quality assertions use real font metrics.
 import pytest
 
 from conftest import char_measure, dummy_text
-from slidegen import balance_wrap, break_long_word, greedy_wrap, raggedness
+from sermonflow import balance_wrap, break_long_word, greedy_wrap, raggedness
 
 #: Enough paragraphs to make aggregate quality claims meaningful.
 CORPUS_SEEDS = range(40)

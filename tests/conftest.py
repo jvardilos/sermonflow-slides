@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import slidegen  # noqa: E402
+import sermonflow as slidegen  # noqa: E402
 
 
 def char_measure(text):

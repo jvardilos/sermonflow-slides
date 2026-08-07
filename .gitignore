@@ -5,3 +5,8 @@ deps
 slides
 *.tif
 *.psd
+
+# packaging / build artifacts
+*.egg-info/
+build/
+dist/

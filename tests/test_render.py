@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-import slidegen
+import sermonflow as slidegen
 from conftest import MAX_FITTING_WORDS, OVERFLOW_WORDS, dummy_text
 
 #: One line up to the 12-line ceiling, at ~5 words per line.
@@ -351,13 +351,18 @@ class TestKerning:
     def test_missing_font_yields_no_kerning(self):
         assert slidegen._load_kerning('/no/such/font.ttf', 0) is None
 
-    def test_kerning_is_ignored_for_the_substitute(self):
-        """Helvetica Neue carries only a legacy 'kern' table, which is
-        deliberately not read -- its scale was fitted without it."""
-        path, index = slidegen.FONT_CHOICES[1][1]
-        if not os.path.exists(path):
-            pytest.skip('Helvetica Neue not present')
-        assert slidegen._load_kerning(path, index) is None
+    def test_only_the_bundled_font_is_a_choice(self):
+        """
+        The Helvetica-substitute-with-horizontal-condense path is gone: the
+        real typeface is now bundled and always resolves, so there is exactly
+        one font choice and it is the reference font. This used to assert that
+        the substitute's legacy 'kern' table was deliberately not read; with no
+        substitute left, the invariant is simply that there is nothing else to
+        choose.
+        """
+        assert len(slidegen.FONT_CHOICES) == 1
+        assert slidegen.IS_REFERENCE_FONT
+        assert slidegen.HORIZONTAL_SCALE == 1.0
 
     def test_kern_width_is_zero_without_kerning_data(self):
         assert slidegen.kern_width('AVATAR', None) == 0.0
@@ -410,14 +415,30 @@ class TestKerning:
 
             assert np.array_equal(np.array(native), np.array(ours)), text
 
-    def test_measured_width_matches_what_is_drawn(self):
-        """Measurement and rendering must agree, or wrapping is fiction."""
+    def test_rendered_ink_matches_native_shaped_width(self):
+        """
+        Measurement and rendering must agree, or wrapping is fiction.
+
+        Pillow built with Raqm (HarfBuzz) shapes and kerns text natively, so
+        the width that lands on the slide is Pillow's own shaped ``textlength``.
+        That is the number rendering has to honour, and the rendered ink does.
+
+        ``text_measurer`` applies the module's own GPOS pair kerning *on top* of
+        Pillow's native shaping. With Raqm present that makes it a deliberately
+        conservative -- slightly tighter -- wrap metric: it can only ever break
+        a line early, never overflow the box (the box-bound tests above cover
+        that). So the fidelity check here is against native shaping, not against
+        that intentionally tighter measure.
+        """
+        from PIL import Image, ImageDraw
+
         verse, _ = slidegen.load_fonts()
         text = 'AVATAR, Yesterday we saw'
-        predicted = slidegen.text_measurer(verse)(text)
+        native = ImageDraw.Draw(Image.new('RGBA', (1, 1))).textlength(
+            text, font=verse.font)
         img = slidegen.compose_slide(text, 'Book 1:1 ESV', max_width=10_000)
         left, right, _, _ = ink_bounds(img)
-        assert abs((right - left) - predicted) <= 4
+        assert abs((right - left) - native) <= 4
 
     def test_face_accepts_a_bare_pil_font(self):
         """Library callers passing a raw PIL font must keep working."""
@@ -461,7 +482,7 @@ class TestReferenceWeight:
         face = slidegen.Face(font, slidegen._load_kerning(path, index))
 
         img = slidegen.make_gradient().copy()
-        slidegen._draw_text(img, slidegen.LEFT_MARGIN, 400, 'John 17:1 ESV', face)
+        slidegen.draw_text(img, slidegen.LEFT_MARGIN, 400, 'John 17:1 ESV', face)
         groups = ink_rows(img)
         assert groups, weight
         height = groups[0][1] - groups[0][0] + 1

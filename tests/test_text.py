@@ -8,7 +8,7 @@ behaviour, so a failure names the case without needing a test per input.
 
 import pytest
 
-from slidegen import (
+from sermonflow import (
     CLOSE_QUOTE,
     OPEN_QUOTE,
     apply_quote_carry,

@@ -1,35 +1,26 @@
 # sermonflow-slides
 
 Generate ProPresenter-ready verse slides that match a hand-built Photoshop
-template, one slide per verse, from a chapter reference.
+template, one slide per verse, from a chapter reference — as a command, as a
+Python library, or as an **MCP tool an LLM can call directly**.
 
 Give it `"John 17"` and it produces 26 transparent 1920×1080 TIFFs — verse text
 set over a black left-hand scrim, reference line underneath — laid out to match
-a professionally produced reference deck closely enough that they can be
-dropped into the same service.
-
-**Status: proof of concept.** It works end to end and is well covered by tests,
-but it scrapes HTML for verse text and writes to a local folder. See
-[Roadmap](#roadmap).
-
----
-
-## What it actually does
+a professionally produced reference deck closely enough that they can be dropped
+into the same service.
 
 ```
 retrieve  →  format  →  validate  →  render
 ```
 
-1. **Retrieve** — fetch a chapter from BibleGateway, return raw verse strings.
-2. **Format** — the "light edits" that make a verse readable standing alone on
-   a screen:
-   - strip scrape residue (`[a]` footnote markers, `(BZ)` cross-references,
-     stranded verse numbers)
-   - **quote carry**: a verse in the middle of an ongoing quotation gets its
-     own opening and closing marks, because each slide is read on its own. A
-     quotation that spans 20 verses gets marks on all 20, not just the ends.
-   - **capitalize** the first letter, even mid-sentence fragments
-   - normalize straight quotes to typographic ones
+1. **Retrieve** — fetch a chapter through a pluggable [provider](#bible-providers):
+   the official **ESV API** when a key is set, the **BibleGateway** scraper
+   otherwise. Returns raw verse strings.
+2. **Format** — the "light edits" that make a verse readable standing alone on a
+   screen: strip scrape residue (`[a]` footnotes, `(BZ)` cross-refs, stranded
+   verse numbers), **quote carry** (a verse mid-quotation gets its own opening
+   and closing marks — a quotation spanning 20 verses gets marks on all 20),
+   capitalize the first letter, normalize quotes to typographic ones.
 3. **Validate** — refuse to render if anything suspicious survived: leftover
    markers, straight quotes, characters the font cannot draw, verses too long
    for a slide. Fails loudly rather than putting `[a]` on a screen mid-service.
@@ -38,99 +29,151 @@ retrieve  →  format  →  validate  →  render
 
 Nearly every layout constant was derived by **measuring the reference deck**
 rather than guessing — box width, line height, the 72px placement grid, the
-gradient's alpha curve. The reasoning and measurements are written up in
-[`FORMATTING_NOTES.md`](FORMATTING_NOTES.md), including two places where an
-assumption from the PSD turned out to be wrong.
+gradient's alpha curve.
 
 ---
 
 ## Install
 
-Requires **Python 3.11+** (developed on 3.14) and macOS. It renders with Neue
-Haas Grotesk Display Pro if installed and falls back to the system's Helvetica
-Neue otherwise. See [Fonts](#fonts).
+Requires **Python 3.11+**. The typeface is **bundled** with the package, so it
+renders identically on macOS, Linux and Windows with nothing to install — see
+[Fonts](#fonts).
 
 ```bash
 git clone <this repo>
 cd sermonflow-slides
 
 python3 -m venv deps
-./deps/bin/pip install -r requirements.txt
+./deps/bin/pip install -e '.[dev]'      # or: pip install .   (no dev tools)
+```
+
+This installs two console commands, `sermonflow` and `sermonflow-mcp`.
+
+---
+
+## Hooking it into an LLM (MCP)
+
+The reason this exists as a package: an assistant that speaks the **Model
+Context Protocol** can go from a reference to finished slides in one tool call.
+Point your MCP client at the installed `sermonflow-mcp` command.
+
+**Claude Desktop / Claude Code** — add to the MCP servers config
+(`claude_desktop_config.json`, or `claude mcp add`):
+
+```json
+{
+  "mcpServers": {
+    "sermonflow-slides": {
+      "command": "/absolute/path/to/sermonflow-slides/deps/bin/sermonflow-mcp",
+      "env": { "ESV_API_KEY": "your-esv-api-key-optional" }
+    }
+  }
+}
+```
+
+Once connected, the model has two tools:
+
+| Tool | What it does |
+|---|---|
+| `preview_slides(reference, translation="ESV")` | Wrapped lines per verse, **nothing written** — the safe look before committing files. Returns any validation problems. |
+| `generate_slides(reference, translation="ESV", output_dir="./slides", strict=True)` | Fetch, validate and render to a folder. Returns the written paths, or the blocking problems if `strict` and the text isn't clean. |
+
+So a prompt like *"preview John 17, then render it to ~/sunday/slides"* becomes
+a `preview_slides` call the model reads back to you, then a `generate_slides`
+call — with the validation gate protecting the service from scrape residue
+landing on a screen.
+
+Run it standalone (stdio) to sanity-check:
+
+```bash
+./deps/bin/sermonflow-mcp      # starts the MCP server on stdio
 ```
 
 ---
 
-## Usage
+## Command line
 
 ```bash
 # render a chapter
-./deps/bin/python main.py "John 17"
+./deps/bin/sermonflow "John 17"
 
-# somewhere else, another translation
-./deps/bin/python main.py "1 John 4" --output-dir ./slides/1john4
-./deps/bin/python main.py "Psalm 23" --translation NIV
+# another translation / another folder
+./deps/bin/sermonflow "Psalm 23" --translation NIV --output-dir ./slides/ps23
 
 # see the wrapped lines without rendering 200MB of TIFFs
-./deps/bin/python main.py "John 17" --dry-run
+./deps/bin/sermonflow "John 17" --dry-run
+
+# force a specific backend
+./deps/bin/sermonflow "John 1" --provider bible-gateway
 ```
+
+`python main.py "John 17"` still works too — it forwards to the same entry point.
 
 | Flag | Meaning |
 |---|---|
 | `-o`, `--output-dir` | where slides land (default `./slides`) |
 | `-t`, `--translation` | version code (default `ESV`) |
+| `-p`, `--provider` | force `esv-api` or `bible-gateway` (default: auto) |
 | `-n`, `--dry-run` | print wrapped lines, render nothing |
 | `--no-strict` | render even if validation complains |
 
-Slides are named `John_17_001.tif` … `John_17_026.tif`, zero-padded so they
-sort into verse order in any file browser or import dialog.
+Slides are named `John_17_001.tif` … `John_17_026.tif`, zero-padded so they sort
+into verse order in any file browser or import dialog.
 
 > **Heads up on size:** uncompressed RGBA TIFFs are ~8MB each, so a chapter is
 > roughly 200MB. `slides/` is gitignored.
 
-### Comparing against a reference deck
+---
 
-```bash
-./deps/bin/python compare.py slides "John 17 "
-./deps/bin/python compare.py slides "John 17 " --overlays ./overlays
-```
+## Bible providers
 
-Prints per-slide metrics — line count, first-line offset, reference gap, width
-ratio, ink overlap, background error — and `--overlays` writes red/green
-onion-skin images (reference red, ours green, overlap yellow) so misalignment is
-visible at a glance. See [Checking a change](#checking-a-change).
+Retrieval is the failure-prone edge — it depends on a third party staying put —
+so it lives behind a `BibleProvider` interface (`sermonflow.providers`), and
+everything durable (formatting, layout, rendering) sits above it and never
+imports a concrete backend. The contract is one line:
 
-### Tests
+> `fetch_chapter(reference, translation)` → `[(verse_text, "Book Chapter:Verse TRANSLATION"), ...]` in verse order
 
-```bash
-./deps/bin/python -m pytest tests/ -q     # 247 tests, ~27s
-```
+Two backends ship, and the choice is automatic:
 
-Covers the text rules, wrap quality ("blockiness"), layout geometry against the
-real reference deck, hostile input (empty text, 150-character junk tokens,
-emoji, CJK, control characters), and all 66 books of the canon. Tests that
-depend on glyph coverage assert the *contract* rather than a hardcoded verdict,
-so they hold under either font choice.
+| Backend | When it's used | Notes |
+|---|---|---|
+| **ESV API** (`api.esv.org`) | `ESV_API_KEY` is set in the environment | Preferred: first-party, stable, documented. Free for non-commercial use — [get a key](https://api.esv.org/). ESV only. |
+| **BibleGateway** (scraper) | no key present | Zero-config fallback so the tool always runs. Parses HTML, so it can break if the site restyles — hence the abstraction. Any translation BibleGateway resolves. |
+
+Adding a third backend (API.Bible, a licensed local corpus, a cache) is a new
+class in `sermonflow/providers/` plus a line in the registry; nothing downstream
+changes. See [`docs/DATABASE_AND_PACKAGING.md`](docs/DATABASE_AND_PACKAGING.md)
+for the planned caching/database layer.
 
 ---
 
-## Using it as a library
+## As a library
 
-`slidegen` has no network or CLI dependency, so it works fine on text from
-anywhere:
+`sermonflow` is flat: `import sermonflow` gives you the whole pipeline.
 
 ```python
-import slidegen
+import sermonflow
 
+# Text from anywhere -- it's really a generic quote-slide renderer.
 verses = [
     ("Some quoted line of text,", "Iliad 1:1"),
     ("and the line that follows it.", "Iliad 1:2"),
 ]
-
-slidegen.generate_slides(verses, output_dir="./out")
+sermonflow.generate_slides(verses, output_dir="./out")
 ```
 
 `generate_slides` runs the formatting pipeline itself. The quote-carry rule is
 order-dependent, so pass the **whole passage in order** and let it run once.
+
+To drive retrieval too:
+
+```python
+from sermonflow.providers import get_default_provider
+from sermonflow.cli import build
+
+build("John 17", output_dir="./out", provider=get_default_provider())
+```
 
 ---
 
@@ -138,69 +181,42 @@ order-dependent, so pass the **whole passage in order** and let it run once.
 
 The template is set in **Neue Haas Grotesk Display Pro** — 55 Roman for verse
 text, 65 Medium for the reference line, 60pt, 72px leading, tracking 0, read
-straight out of the PSD.
-
-Font selection is a list in `slidegen.py`, best first; the first choice whose
-files are all present wins, so installing the real font is the only step needed
-to use it:
-
-| Choice | Files | Scale |
-|---|---|---|
-| Neue Haas Grotesk Display Pro | `~/Library/Fonts/NeueHaasDisplay{Roman,Mediu}.ttf` | 1.0 |
-| Helvetica Neue (substitute) | `/System/Library/Fonts/HelveticaNeue.ttc` idx 0 / 10 | 1/1.10 |
-
-The scale condenses rendered text horizontally. It exists only for the
-substitute — Helvetica Neue sets ~10% wider at the same size, so the reciprocal
-pulls line widths back onto the reference. With the real font it is `1.0`, text
-is drawn directly with no resample step, and it is both exact and sharper.
-
-`TEXT_BOX_WIDTH = 678` is the best-scoring width for **both** choices, so
-switching fonts needs no refit.
+straight out of the PSD. Those `.ttf` files are **bundled in the package**
+(`sermonflow/assets/fonts/`) and located with `importlib.resources`, so the deck
+typeface is used everywhere with zero setup — no reliance on system font
+directories, which is what the proof of concept got wrong off macOS.
 
 ### Kerning
 
-Pillow's basic layout engine positions each glyph by its bare advance width and
-ignores GPOS entirely. Photoshop kerns, so the reference deck is kerned and
-unkerned text runs measurably wide — about 0.3% on a typical line and up to
-1.3% on one full of kerned pairs, which is enough to move a line break.
-
-`slidegen` therefore reads the font's GPOS `kern` pairs itself and applies them
-in both measurement and drawing. Drawing per character at kerned offsets is
-safe because PIL's basic layout already places each glyph independently, so
-per-character drawing at the same offsets is pixel-identical to drawing the
-whole string — verified across the deck. Kerning is what takes per-line ink
-width from a median of 1.0033 against the deck to **1.0000**.
-
-Only `LookupType 2` (pair adjustment) is read, which is all Neue Haas uses.
-The legacy `kern` table that Helvetica Neue carries instead is deliberately
-ignored, so the substitute keeps the metrics its scale was fitted against.
-
-> Installing Pillow with **Raqm** would get kerning, shaping and bidi from
-> HarfBuzz for free and make this code unnecessary — but it needs Pillow built
-> from source against `libraqm`, which the plain wheel in `requirements.txt`
-> gives up.
+Photoshop kerns, so the reference deck is kerned. A Pillow built with **Raqm
+(HarfBuzz)** — which the current wheels are — shapes and kerns natively, and
+`sermonflow` additionally applies the font's GPOS pair kerning as a
+deliberately conservative wrap metric (it can only break a line early, never
+overflow the box). Kerning is what takes per-line ink width from a median of
+1.0033 against the deck to **1.0000**.
 
 ### Glyph coverage
 
-Neue Haas Grotesk Display Pro carries **432 glyphs and no Greek at all**;
-Helvetica Neue does have it. So a verse or point quoting a Greek word is
-refused by validation under the real font rather than rendered as tofu boxes.
-That is the safe failure, but it is a real difference worth knowing before a
-service. `find_unrenderable` is what reports it.
+Neue Haas Grotesk Display Pro carries **432 glyphs and no Greek at all**. So a
+verse quoting a Greek word is refused by validation (`find_unrenderable`) rather
+than rendered as tofu boxes — the safe failure, but a real difference worth
+knowing before a service.
 
-### Checking a change
+### Checking a change against a reference deck
 
-`compare.py` is how you verify any of this. Its `iou` column — ink overlap with
-the reference deck — is the metric that sees letterform *shape* rather than
-just extent, and it is the one that showed the font swap mattered:
+`compare.py` diffs generated slides against a reference deck and prints per-slide
+metrics — line count, first-line offset, reference gap, width ratio, ink overlap,
+background error:
 
-| | width ratio | ink overlap |
-|---|---|---|
-| Helvetica Neue + 1/1.10 squeeze | 1.002 | 0.241 |
-| Neue Haas Grotesk + kerning | 1.002 | **0.511** |
+```bash
+./deps/bin/python compare.py ./slides "./John 17 " --overlays ./overlays
+```
 
-The width ratio is identical because the squeeze was fitted to make it so.
-Overlap more than doubled.
+`--overlays` writes red/green onion-skin images (reference red, ours green,
+overlap yellow) so misalignment is visible at a glance. Its `iou` column — ink
+overlap — is the metric that sees letterform *shape*, and it's the one that
+showed the bundled Neue Haas (~0.51) beats a squeezed Helvetica substitute
+(~0.24).
 
 ---
 
@@ -210,7 +226,7 @@ Overlap more than doubled.
 |---|---|
 | Canvas | 1920 × 1080 RGBA |
 | Left margin | 91px |
-| Text box | 678px (post-scale) |
+| Text box | 678px |
 | Font size | 60px |
 | Line height | 72px (auto-leading 1.2 × 60) |
 | Reference gap | 143px below the last verse line |
@@ -220,85 +236,57 @@ Overlap more than doubled.
 
 ---
 
-## Roadmap
+## Tests & types
 
-Current state is a proof of concept. Roughly in order of how much each would
-improve things:
+```bash
+./deps/bin/python -m pytest tests/ -q     # 278 tests, ~45s
+./deps/bin/pyright                        # 0 errors; src is strict
+```
 
-### 1. A real Bible API
+Tests cover the text rules, wrap quality ("blockiness"), layout geometry, hostile
+input (empty text, 150-character junk tokens, emoji, CJK, control characters),
+all 66 books of the canon, and the provider parsers (offline, against fixtures).
 
-`retrieve.py` scrapes HTML and **will break** whenever BibleGateway restyles
-their passage page. It is deliberately thin and isolated for exactly this
-reason — all the durable logic lives in `slidegen.py`, and the replacement
-contract is one line:
-
-> return `[(verse_text, "Book Chapter:Verse TRANSLATION"), ...]` in verse order
-
-Candidates: API.Bible, ESV API (free for non-commercial, and the project is
-already ESV-first), or a licensed local corpus. A local corpus also makes the
-whole pipeline offline and removes the copyright question around caching.
-
-Worth adding alongside: **caching**, so re-running a chapter never re-fetches.
-
-### 2. NLP-driven slide selection from sermon notes
-
-The interesting one. Today you tell it a chapter and it renders every verse.
-What you actually want is to hand it **sermon notes** and get back the slides
-the sermon needs:
-
-- extract scripture references from free-form notes, including loose ones
-  ("later in that chapter", "the passage about the vine")
-- decide which verses actually get a slide vs. which are read past
-- detect **Point slides** — the emphasis lines that are not scripture at all
-  (see below)
-- order the deck to follow the sermon rather than the chapter
-- optionally split a long verse across two slides at a sensible clause break
-
-This is where an LLM earns its place: reference extraction and "is this a point
-or a passage" are judgment calls, not regexes. Everything downstream of that
-decision is already deterministic and tested.
-
-### 3. Point slides
-
-A second slide type: a short phrase of emphasis, **no reference line**,
-centered, bold. The architecture already supports it cleanly — `block_height`
-and `block_top` are the only places the reference line is assumed. Waiting on a
-reference example to measure, rather than guessing the centering.
-
-### 4. Push to GCS
-
-Render straight to a bucket instead of a local folder, so the slides are
-available to whoever is running ProPresenter without a hand-off:
-
-- upload per chapter with a stable object path
-- probably switch to **LZW-compressed TIFF or PNG** first — 200MB per chapter
-  uncompressed is a lot to push every week
-- signed URLs or a simple index page for the tech team
-- a scheduled job that builds next Sunday's deck from the notes doc
-  automatically
-
-### Smaller things
-
-- Split an over-long verse across two slides instead of raising
-  `SlideOverflowError` (nothing in John 17 comes close, but a long Psalm might)
-- The reference line still does not wrap. It is now budgeted against the scrim
-  (`REF_MAX_WIDTH`, 741px) rather than the narrower verse box, which is enough
-  for every reference in the canon — `"Song of Solomon 8:14 ESV"` is the
-  longest at 686px — but a long non-canonical reference is still reported
-  rather than handled
-- Poetry (Psalms) and short disconnected verses have no professional reference
-  slides to validate against yet
-- A `--compress` flag, and PNG output for previewing
+The package source (`src/sermonflow/`) type-checks clean under **pyright strict**
+— set Pylance to strict in VS Code and the package reports nothing. Tests and dev
+scripts run at a lightly relaxed level (they lean on pytest fixtures and the
+imprecise Pillow/numpy stubs); see the `[tool.pyright]` config in `pyproject.toml`.
 
 ---
 
 ## Layout of the repo
 
-| File | Role |
+| Path | Role |
 |---|---|
-| `main.py` | CLI entry point |
-| `slidegen.py` | All generation: text rules, wrapping, layout, rendering |
-| `retrieve.py` | BibleGateway scraping — thin, disposable, expected to be replaced |
+| `src/sermonflow/text.py` | Text normalization: artifacts, quote carry, capitalization |
+| `src/sermonflow/wrap.py` | Line breaking: greedy + balanced wrap |
+| `src/sermonflow/fonts.py` | Font selection, metrics, kerning, glyph drawing |
+| `src/sermonflow/layout.py` | Geometry: grid-snapped placement, fit/overflow, scrim budget |
+| `src/sermonflow/render.py` | Gradient, composition, TIFF output |
+| `src/sermonflow/cli.py` | `sermonflow` command |
+| `src/sermonflow/mcp_server.py` | `sermonflow-mcp` MCP server |
+| `src/sermonflow/providers/` | Retrieval behind `BibleProvider` (ESV API, BibleGateway) |
+| `src/sermonflow/assets/fonts/` | Bundled Neue Haas Grotesk Display Pro |
 | `compare.py` | Dev tool: diff generated slides against a reference deck |
-| `tests/` | 247 tests |
-| `FORMATTING_NOTES.md` | How every constant was derived, and what is still open |
+| `tests/` | 278 tests |
+| `docs/DATABASE_AND_PACKAGING.md` | Design: slide cache/database + zip packaging |
+
+---
+
+## Roadmap
+
+- **A real Bible API — done.** The ESV API backend is in; set `ESV_API_KEY` to
+  use it. A licensed local corpus would make the pipeline fully offline.
+- **Slide cache + zip packaging.** Check a store before rendering, then bundle a
+  chapter into a zip for hand-off. Designed in
+  [`docs/DATABASE_AND_PACKAGING.md`](docs/DATABASE_AND_PACKAGING.md).
+- **NLP-driven slide selection from sermon notes.** Hand it notes, get back the
+  slides the sermon actually needs — reference extraction, point-vs-passage
+  judgement, deck ordering. This is where the LLM/MCP integration earns its
+  place; everything downstream is already deterministic and tested.
+- **Point slides.** A second slide type: short emphasis line, no reference,
+  centered, bold. `block_height`/`block_top` are the only places the reference
+  line is assumed. Waiting on a reference example to measure against.
+- **Smaller things:** split an over-long verse across two slides instead of
+  raising; wrap the reference line; LZW-compressed TIFF or PNG output; a
+  `--compress` flag.

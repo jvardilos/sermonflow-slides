@@ -15,7 +15,7 @@ before anything reaches a screen.
 
 import pytest
 
-import slidegen
+import sermonflow as slidegen
 from conftest import MAX_FITTING_WORDS, OVERFLOW_WORDS, dummy_text
 
 REF = 'Book 1:1 ESV'

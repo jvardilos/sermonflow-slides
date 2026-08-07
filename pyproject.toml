@@ -1,0 +1,116 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sermonflow-slides"
+version = "0.2.0"
+description = "Generate ProPresenter-ready verse slides that match a hand-built Photoshop template, one slide per verse, from a chapter reference."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Proprietary" }
+authors = [{ name = "sermonflow-slides" }]
+keywords = ["bible", "slides", "propresenter", "typography", "mcp"]
+
+# Runtime dependencies. Floors are the versions this was developed against;
+# they are lower bounds, not pins, so the package installs cleanly next to
+# other things. fonttools carries the GPOS kerning read that takes the ink
+# match onto the reference deck, so it is required rather than optional here.
+dependencies = [
+    "pillow>=12.0",
+    "requests>=2.32",
+    "beautifulsoup4>=4.13",
+    "fonttools>=4.60",
+    "mcp>=2.0",
+]
+
+[project.optional-dependencies]
+# numpy powers the compare.py dev tool and the golden layout tests; pyright is
+# the type checker the strict-mode config below targets.
+dev = [
+    "pytest>=9.0",
+    "numpy>=2.2",
+    "pyright>=1.1.400",
+]
+
+[project.scripts]
+sermonflow = "sermonflow.cli:main"
+sermonflow-mcp = "sermonflow.mcp_server:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+# Ship the bundled typeface and the PEP 561 marker inside the wheel, so a real
+# `pip install` (not just a source checkout) can still find the font.
+sermonflow = ["py.typed", "assets/fonts/*.ttf"]
+
+# ---------------------------------------------------------------------------
+# Type checking
+# ---------------------------------------------------------------------------
+# The package source (src/sermonflow) is held to strict -- "python strict" in
+# VS Code / Pylance passes clean. The tests and dev scripts are the same strict
+# baseline with the strict-only "unknown type" family relaxed, because the
+# suite deliberately reaches into private names and leans on pytest's dynamic
+# fixture injection, and compare.py is numpy-heavy -- none of which is worth
+# fighting. fontTools ships no type stubs, so missing stubs are not reported.
+#
+# (This pyright version does not honour typeCheckingMode inside an
+# executionEnvironment, so strict is set globally and downgraded per-tree via
+# individual report toggles rather than the other way round.)
+[tool.pyright]
+include = ["src", "tests", "compare.py", "main.py"]
+pythonVersion = "3.11"
+typeCheckingMode = "strict"
+reportMissingTypeStubs = false
+# The project's virtualenv, so pyright resolves Pillow/bs4/mcp/etc.
+venvPath = "."
+venv = "deps"
+
+# src/sermonflow: full strict, shielded from the repo-root relaxations below.
+# reportPrivateUsage is the one strict rule turned off: the package is split
+# into focused modules that intentionally share underscore-prefixed helpers
+# (the drawing/kerning/font internals the test suite pins), and pyright treats
+# each *file* as the privacy boundary, so package-internal sharing reads as a
+# violation. Nothing else in strict is relaxed here.
+[[tool.pyright.executionEnvironments]]
+root = "src"
+reportPrivateUsage = false
+
+# Tests: strict minus the noise that dynamic test code, private-name access and
+# the imprecise Pillow/numpy stubs inevitably trip.
+[[tool.pyright.executionEnvironments]]
+root = "tests"
+reportPrivateUsage = false
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportMissingParameterType = false
+reportUnknownLambdaType = false
+reportUninitializedInstanceVariable = false
+reportUntypedFunctionDecorator = false
+reportMissingTypeArgument = false
+reportUnnecessaryIsInstance = false
+reportUnnecessaryComparison = false
+reportUnusedVariable = false
+reportIndexIssue = false
+reportOptionalSubscript = false
+reportOptionalMemberAccess = false
+
+# Repo-root dev scripts (compare.py, main.py): same relaxations as tests.
+[[tool.pyright.executionEnvironments]]
+root = "."
+reportUnknownMemberType = false
+reportUnknownArgumentType = false
+reportUnknownVariableType = false
+reportUnknownParameterType = false
+reportMissingParameterType = false
+reportUnknownLambdaType = false
+reportMissingTypeArgument = false
+reportUnnecessaryIsInstance = false
+reportUnnecessaryComparison = false
+reportOptionalMemberAccess = false
+reportOptionalOperand = false
+reportOptionalSubscript = false
+reportIndexIssue = false
