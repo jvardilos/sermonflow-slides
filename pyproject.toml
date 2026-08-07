@@ -1,6 +1,6 @@
 [build-system]
-requires = ["setuptools>=68"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "sermonflow-slides"
@@ -37,13 +37,12 @@ dev = [
 sermonflow = "sermonflow.cli:main"
 sermonflow-mcp = "sermonflow.mcp_server:main"
 
-[tool.setuptools.packages.find]
-where = ["src"]
-
-[tool.setuptools.package-data]
-# Ship the bundled typeface and the PEP 561 marker inside the wheel, so a real
-# `pip install` (not just a source checkout) can still find the font.
-sermonflow = ["py.typed", "assets/fonts/*.ttf"]
+[tool.hatch.build.targets.wheel]
+# Build the package under src/. The bundled typeface and the PEP 561 py.typed
+# marker live inside it and ship in the wheel automatically, so a real
+# `pip install` (not only a source checkout) still finds the font. Hatchling
+# does not generate an .egg-info directory the way setuptools does.
+packages = ["src/sermonflow"]
 
 # ---------------------------------------------------------------------------
 # Type checking

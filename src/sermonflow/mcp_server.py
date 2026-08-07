@@ -19,10 +19,11 @@ from typing import Any
 
 from mcp.server import MCPServer
 
+from . import __version__
 from .cli import build, prepare, preview_lines
 from .providers import DEFAULT_TRANSLATION
 
-mcp = MCPServer("sermonflow-slides")
+mcp = MCPServer("sermonflow-slides", version=__version__)
 
 
 @mcp.tool()
