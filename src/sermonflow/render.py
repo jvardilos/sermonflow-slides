@@ -2,29 +2,36 @@
 Rendering: turn placed text into a finished 1920x1080 RGBA TIFF that matches
 the reference deck.
 
-This is the only layer that touches the filesystem. It composes the black
-left-hand scrim, draws the verse lines and the reference line at the ink tops
-layout.py computed, and writes the result. `generate_slides` runs the whole
-passage, skipping blank verses so one empty entry cannot abort a batch.
+This is the only layer that touches the filesystem, and since layouts/ arrived
+it is also the only layer that is layout-agnostic. Everything here works on a
+`Placed` -- a slide reduced to draw ops at ink coordinates -- so it composes a
+verse slide, a rolling point deck, or a slide type nobody has written yet
+without knowing the difference. The scrim is the one piece of artwork it owns.
+
+`generate_slides` and `generate_points` run a whole passage or a whole list of
+points, skipping blank entries so one empty item cannot abort a batch.
 """
 
 from __future__ import annotations
 
 import os
-import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 from functools import lru_cache
 
 from PIL import Image
 
-from .fonts import draw_text, load_fonts
-from .layout import (
+from .fonts import draw_text, load_face
+from .layouts import (
+    DEFAULT_POINT_STYLE,
     GRADIENT_PROFILE,
-    LEFT_MARGIN,
     SLIDE_HEIGHT,
     SLIDE_WIDTH,
     TEXT_BOX_WIDTH,
-    layout_slide,
+    EmptyVerseError,
+    Placed,
+    get_point_style,
+    plan_verse,
+    slide_stem,
 )
 from .text import Verse, format_verses
 
@@ -52,36 +59,63 @@ def make_gradient(width: int = SLIDE_WIDTH, height: int = SLIDE_HEIGHT) -> Image
     return row.resize((width, height))
 
 
+# ---------------------------------------------------------------------------
+# Layout-agnostic composition
+# ---------------------------------------------------------------------------
+
+
+def compose(placed: Placed) -> Image.Image:
+    """Draw one planned slide onto the scrim and return the image."""
+    img = make_gradient().copy()
+    for op in placed.ops:
+        draw_text(img, op.left, op.ink_top, op.text, load_face(op.weight))
+    return img
+
+
+def render(placed: Placed, output_path: str) -> str:
+    """Compose a planned slide and write it to `output_path` as an RGBA TIFF."""
+    compose(placed).save(output_path, "TIFF")
+    return output_path
+
+
+def render_deck(slides: Sequence[Placed], output_dir: str = "./slides") -> list[str]:
+    """
+    Write a planned deck to `output_dir` (created if missing), in order.
+
+    Files are named from each slide's stem, which the layout chose, so verse
+    decks stay in verse order and point decks in reveal order in any file
+    browser or import dialog.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    return [
+        render(placed, os.path.join(output_dir, f"{placed.stem}.tif"))
+        for placed in slides
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Verse slides
+# ---------------------------------------------------------------------------
+
+
 def compose_slide(
     verse_text: str, reference: str, max_width: float = TEXT_BOX_WIDTH
 ) -> Image.Image:
     """
-    Build one finished slide as an in-memory RGBA image.
+    Build one finished verse slide as an in-memory RGBA image.
 
     `verse_text` is expected to have been through format_verses already --
     nothing here does text normalization.
     """
-    verse_font, ref_font = load_fonts()
-    lines, line_tops, ref_top = layout_slide(
-        verse_text, reference, font=verse_font, max_width=max_width
-    )
-
-    img = make_gradient().copy()
-    for line, top in zip(lines, line_tops):
-        draw_text(img, LEFT_MARGIN, top, line, verse_font)
-    draw_text(img, LEFT_MARGIN, ref_top, reference, ref_font)
-    return img
+    return compose(plan_verse(verse_text, reference, max_width=max_width))
 
 
 def render_slide(
     verse_text: str, reference: str, output_path: str, max_width: float = TEXT_BOX_WIDTH
 ) -> str:
-    """Compose a slide and write it to `output_path` as an RGBA TIFF."""
+    """Compose a verse slide and write it to `output_path` as an RGBA TIFF."""
     compose_slide(verse_text, reference, max_width=max_width).save(output_path, "TIFF")
     return output_path
-
-
-_REF_PARTS_RE = re.compile(r"^(.*?)(\d+):(\d+)")
 
 
 def slide_filename(reference: str, index: int) -> str:
@@ -91,11 +125,7 @@ def slide_filename(reference: str, index: int) -> str:
     "John 17:1 ESV" -> "John_17_001.tif". Falls back to the sequence number
     if the reference does not parse.
     """
-    match = _REF_PARTS_RE.match(reference)
-    if not match:
-        return f"verse_{index:03d}.tif"
-    book = match.group(1).strip().replace(" ", "_")
-    return f"{book}_{match.group(2)}_{int(match.group(3)):03d}.tif"
+    return f"{slide_stem(reference, index)}.tif"
 
 
 def generate_slides(
@@ -119,12 +149,51 @@ def generate_slides(
     """
     prepared = list(verses) if formatted else format_verses(verses)
 
-    os.makedirs(output_dir, exist_ok=True)
-    paths: list[str] = []
+    slides: list[Placed] = []
     for index, (text, ref) in enumerate(prepared, 1):
         if not text.strip():
             continue
-        path = os.path.join(output_dir, slide_filename(ref, index))
-        render_slide(text, ref, path)
-        paths.append(path)
-    return paths
+        slides.append(plan_verse(text, ref, index))
+    return render_deck(slides, output_dir)
+
+
+# ---------------------------------------------------------------------------
+# Point slides
+# ---------------------------------------------------------------------------
+
+
+def plan_points(
+    points: Sequence[str], style: str = DEFAULT_POINT_STYLE, stem: str = "point"
+) -> list[Placed]:
+    """
+    Plan a point deck in the named style, without drawing or writing anything.
+
+    Blank points are dropped first: the rolling style positions each point from
+    the ones before it, so a blank entry left in place would leave a hole in
+    the build.
+    """
+    kept = [text for text in points if text.strip()]
+    if not kept:
+        raise EmptyVerseError("no renderable points")
+    return get_point_style(style).plan(kept, stem)
+
+
+def generate_points(
+    points: Sequence[str],
+    output_dir: str = "./slides",
+    style: str = DEFAULT_POINT_STYLE,
+    stem: str = "point",
+) -> list[str]:
+    """
+    Render a list of sermon points to `output_dir`.
+
+    Args:
+        points: the statements, in the order they should appear.
+        output_dir: created if missing.
+        style: "rolling" (accumulating reveal) or "centered" (one per slide).
+            See sermonflow.layouts.POINT_STYLES.
+        stem: filename stem; slides are `<stem>_001.tif` and up.
+
+    Returns the list of written paths.
+    """
+    return render_deck(plan_points(points, style, stem), output_dir)

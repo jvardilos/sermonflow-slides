@@ -1,9 +1,13 @@
 """
-Command-line entry point: pull a chapter and render a slide per verse.
+Command-line entry point: pull a chapter and render a slide per verse, or set
+a list of sermon points.
 
     sermonflow "John 17"
     sermonflow "1 John 4" --output-dir ./slides/1john4
     sermonflow "John 17" --dry-run          # show the text, render nothing
+
+    sermonflow --points "The Sovereignty of Christ." "The Atonement."
+    sermonflow --points "My kingdom is not of this world." --style centered
 
 The pipeline is provider.fetch_chapter -> format_verses -> validate -> render.
 Validation runs between formatting and rendering so scrape residue is reported
@@ -20,14 +24,16 @@ import sys
 from collections.abc import Sequence
 
 from .fonts import find_unrenderable
-from .layout import (
+from .layouts import (
+    DEFAULT_POINT_STYLE,
     EmptyVerseError,
     SlideOverflowError,
     find_overlong_reference,
     layout_slide,
+    point_style_names,
 )
 from .providers import DEFAULT_TRANSLATION, BibleProvider, get_default_provider, get_provider
-from .render import generate_slides
+from .render import generate_points, generate_slides, plan_points
 from .text import Verse, find_artifacts, format_verses
 
 
@@ -109,7 +115,11 @@ def build(
             raise SystemExit("refusing to render; pass --no-strict to override")
 
     if dry_run:
-        for ref, lines in preview_lines(verses):
+        try:
+            preview = preview_lines(verses)
+        except SlideOverflowError as exc:
+            raise SystemExit(f"cannot lay this passage out: {exc}") from None
+        for ref, lines in preview:
             print(f"\n{ref}  ({len(lines)} lines)")
             for line in lines:
                 print(f"    {line}")
@@ -120,12 +130,102 @@ def build(
     return paths
 
 
+# ---------------------------------------------------------------------------
+# Point slides
+# ---------------------------------------------------------------------------
+
+
+def validate_points(
+    points: Sequence[str], style: str = DEFAULT_POINT_STYLE
+) -> list[str]:
+    """
+    Check a list of points the way `validate` checks a passage.
+
+    The artifact scan is deliberately not run here: it hunts scrape residue,
+    and points are typed by a person rather than pulled off a web page.
+    """
+    problems: list[str] = []
+    for i, text in enumerate(points, 1):
+        if not text.strip():
+            problems.append(f"point {i}: empty, will be skipped")
+            continue
+        for kind, snippet in find_unrenderable(text):
+            problems.append(f"point {i}: {kind} {snippet}")
+    try:
+        plan_points(points, style)
+    except EmptyVerseError:
+        problems.append("no renderable points")
+    except (SlideOverflowError, ValueError) as exc:
+        problems.append(str(exc))
+    return problems
+
+
+def preview_points(
+    points: Sequence[str], style: str = DEFAULT_POINT_STYLE
+) -> list[tuple[str, list[str]]]:
+    """(stem, lines) per planned slide -- the dry-run view for points."""
+    return [
+        (placed.stem, [op.text for op in placed.ops])
+        for placed in plan_points(points, style)
+    ]
+
+
+def build_points(
+    points: Sequence[str],
+    output_dir: str = "./slides",
+    style: str = DEFAULT_POINT_STYLE,
+    dry_run: bool = False,
+    strict: bool = True,
+) -> list[str]:
+    """Validate and render a list of points. Mirrors `build`."""
+    problems = validate_points(points, style)
+
+    if problems:
+        print(f"{len(problems)} problem(s) found:", file=sys.stderr)
+        for problem in problems:
+            print(f"  - {problem}", file=sys.stderr)
+        if strict and not dry_run:
+            raise SystemExit("refusing to render; pass --no-strict to override")
+
+    if dry_run:
+        try:
+            preview = preview_points(points, style)
+        except ValueError as exc:
+            # A dry run that cannot be laid out at all still owes the operator
+            # the reason, not a traceback. The detail is already on stderr
+            # above; this is the exit line.
+            raise SystemExit(f"cannot lay these points out: {exc}") from None
+        for stem, lines in preview:
+            print(f"\n{stem}  ({len(lines)} lines)")
+            for line in lines:
+                print(f"    {line}")
+        return []
+
+    paths = generate_points(points, output_dir=output_dir, style=style)
+    print(f"Rendered {len(paths)} {style} point slides to {output_dir}")
+    return paths
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
-        description="Render a ProPresenter-ready slide per verse of a chapter."
+        description="Render ProPresenter-ready slides: a verse per slide from a "
+        "chapter, or a deck of sermon points."
     )
     parser.add_argument(
         "reference", nargs="?", default="John 17", help='book and chapter, e.g. "John 17"'
+    )
+    parser.add_argument(
+        "--points",
+        nargs="+",
+        metavar="POINT",
+        help="render these statements as point slides instead of a chapter",
+    )
+    parser.add_argument(
+        "--style",
+        default=DEFAULT_POINT_STYLE,
+        choices=point_style_names(),
+        help=f"point layout (default: {DEFAULT_POINT_STYLE}); "
+        "rolling reveals one point at a time, centered gives each its own slide",
     )
     parser.add_argument("-o", "--output-dir", default="./slides")
     parser.add_argument("-t", "--translation", default=DEFAULT_TRANSLATION)
@@ -148,6 +248,16 @@ def main(argv: Sequence[str] | None = None) -> None:
         help="render even if validation reports problems",
     )
     args = parser.parse_args(argv)
+
+    if args.points:
+        build_points(
+            args.points,
+            output_dir=args.output_dir,
+            style=args.style,
+            dry_run=args.dry_run,
+            strict=args.strict,
+        )
+        return
 
     provider = get_provider(args.provider) if args.provider else None
     build(

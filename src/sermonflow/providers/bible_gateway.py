@@ -24,7 +24,7 @@ import requests
 from bs4 import BeautifulSoup
 
 from ..text import Verse
-from .base import DEFAULT_TRANSLATION
+from .base import DEFAULT_TRANSLATION, format_citation
 
 PASSAGE_URL = "https://www.biblegateway.com/passage/"
 
@@ -80,7 +80,10 @@ def parse_chapter(html: str, translation: str = DEFAULT_TRANSLATION) -> list[Ver
     heading = soup.select_one("div.bcv .dropdown-display-text")
     if heading is None:
         raise ValueError("no passage found on page")
-    book_chapter = heading.get_text(strip=True).rsplit(":", 1)[0]
+    # Passed through verbatim: format_citation parses it. The heading is
+    # "John 17" for most books but a bare "Jude" for the single-chapter
+    # ones, and normalizing that difference is not this module's job.
+    label = heading.get_text(strip=True)
 
     body = soup.select_one(f"div.passage-content div.version-{translation}")
     if body is None:
@@ -121,7 +124,7 @@ def parse_chapter(html: str, translation: str = DEFAULT_TRANSLATION) -> list[Ver
     return [
         (
             _WHITESPACE_RE.sub(" ", " ".join(fragments[n])).strip(),
-            f"{book_chapter}:{n} {translation}",
+            format_citation(label, n, translation),
         )
         for n in order
     ]

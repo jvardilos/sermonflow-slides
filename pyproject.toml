@@ -5,7 +5,7 @@ build-backend = "hatchling.build"
 [project]
 name = "sermonflow-slides"
 version = "0.2.0"
-description = "Generate ProPresenter-ready verse slides that match a hand-built Photoshop template, one slide per verse, from a chapter reference."
+description = "Generate ProPresenter-ready slides that match a hand-built Photoshop template: one slide per verse from a chapter reference, or a deck of sermon points."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }

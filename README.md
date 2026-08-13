@@ -9,6 +9,11 @@ set over a black left-hand scrim, reference line underneath — laid out to matc
 a professionally produced reference deck closely enough that they can be dropped
 into the same service.
 
+Hand it a list of sermon points instead and it sets those, in either of the two
+[point layouts](#slide-types-and-adding-one) the reference templates use: a
+**rolling** list that reveals one point per slide, or a **centered** statement
+on its own.
+
 ```
 retrieve  →  format  →  validate  →  render
 ```
@@ -57,16 +62,29 @@ The reason this is a package: any model that speaks the **Model Context
 Protocol** can go from a reference to finished slides in one tool call. The
 `sermonflow-mcp` command is a standard MCP server, so it drops into any
 MCP-capable host — from a local open model like **gpt-oss** to the **ChatGPT**
-app. The model gets two tools:
+app. The model gets five tools:
 
 | Tool | What it does |
 |---|---|
 | `preview_slides(reference, translation="ESV")` | Wrapped lines per verse, **nothing written** — the safe look before committing files. Returns any validation problems. |
-| `generate_slides(reference, translation="ESV", output_dir="./slides", strict=True)` | Fetch, validate and render to a folder. Returns the written paths, or the blocking problems if `strict` and the text isn't clean. |
+| `generate_slides(reference, translation="ESV", output_dir="./slides", strict=True)` | Fetch, validate and render a chapter. Returns the written paths, or the blocking problems if `strict` and the text isn't clean. |
+| `preview_points(points, style="rolling")` | How a list of sermon points will lay out, nothing written. |
+| `generate_points(points, style="rolling", output_dir="./slides", strict=True)` | Render a list of points. Returns the written paths. |
+| `list_layouts()` | The point styles and when each is right. Built from the layout registry, so a style added under `layouts/` appears here on its own. |
 
 So *"preview John 17, then render it to ~/sunday/slides"* becomes a
 `preview_slides` call the model reads back to you, then a `generate_slides` call
 — the validation gate keeping scrape residue off the screen mid-service.
+
+**How the model knows which one you meant.** The split is by slide type, not a
+mode flag on one call, because the split is what makes the choice obvious from
+what you said. Scripture is named by *reference* and the tool fetches it, so
+"put Romans 8:28 up" can only be `generate_slides`. Points are the words you
+supply, so "make these three the outline" can only be `generate_points`. Each
+tool's description says so explicitly and points at the other, and
+`list_layouts` is there for when the request is ambiguous ("make this a point"
+— rolling or centered?) so the model can ask with real options rather than
+guess.
 
 ### Two transports — pick by where the model runs
 
@@ -173,6 +191,12 @@ with their schemas.
 
 # force a specific backend
 ./deps/bin/sermonflow "John 1" --provider bible-gateway
+
+# sermon points instead of a chapter: one slide per point, the list building up
+./deps/bin/sermonflow --points "The Sovereignty of Christ." "The Atonement."
+
+# a single statement, centered on its own slide
+./deps/bin/sermonflow --points "My kingdom is not of this world." --style centered
 ```
 
 `python main.py "John 17"` still works too — it forwards to the same entry point.
@@ -184,6 +208,8 @@ with their schemas.
 | `-p`, `--provider` | force `esv-api` or `bible-gateway` (default: auto) |
 | `-n`, `--dry-run` | print wrapped lines, render nothing |
 | `--no-strict` | render even if validation complains |
+| `--points` | render these statements as point slides instead of a chapter |
+| `--style` | point layout: `rolling` (default) or `centered` |
 
 Slides are named `John_17_001.tif` … `John_17_026.tif`, zero-padded so they sort
 into verse order in any file browser or import dialog.
@@ -214,6 +240,18 @@ class in `sermonflow/providers/` plus a line in the registry; nothing downstream
 changes. See [`docs/DATABASE_AND_PACKAGING.md`](docs/DATABASE_AND_PACKAGING.md)
 for the planned caching/database layer.
 
+**The reference line is built here, not trusted.** Sources disagree about what
+to call a passage: BibleGateway's heading for Jude is `Jude`, while the ESV API
+normalizes the same request to `Jude 1-25`. Pasting `:verse` onto whichever
+arrived put `Jude:1 ESV` and `Jude 1-25:3 ESV` on screen, so `format_citation`
+parses the label into book and chapter and emits the contract's shape itself —
+which is what makes the slide independent of which backend answered.
+
+Single-chapter books (Jude, Philemon, Obadiah, 2 and 3 John) get an **explicit
+chapter**: `Jude 1:3 ESV`, not the verse-only `Jude 3` a scholar would write.
+The redundant `1:` is the convention on screen and keeps every slide in a deck
+labelled the same way.
+
 ---
 
 ## As a library
@@ -234,6 +272,19 @@ sermonflow.generate_slides(verses, output_dir="./out")
 `generate_slides` runs the formatting pipeline itself. The quote-carry rule is
 order-dependent, so pass the **whole passage in order** and let it run once.
 
+Points are the other slide type, and take plain strings:
+
+```python
+sermonflow.generate_points(
+    ["The Sovereignty of Christ.", "The Atonement."],
+    output_dir="./out",
+    style="rolling",            # or "centered"
+)
+```
+
+`plan_rolling` / `plan_centered` return the placed slides without drawing, if
+you want the geometry rather than the files.
+
 To drive retrieval too:
 
 ```python
@@ -249,7 +300,9 @@ build("John 17", output_dir="./out", provider=get_default_provider())
 
 The template is set in **Neue Haas Grotesk Display Pro** — 55 Roman for verse
 text, 65 Medium for the reference line, 60pt, 72px leading, tracking 0, read
-straight out of the PSD. Those `.ttf` files are **bundled in the package**
+straight out of the PSD. Point slides are the same face at the same size in
+**65 Medium Italic**, which was measured off the point templates rather than
+read from a PSD. Those `.ttf` files are **bundled in the package**
 (`sermonflow/assets/fonts/`) and located with `importlib.resources`, so the deck
 typeface is used everywhere with zero setup — no reliance on system font
 directories, which is what the proof of concept got wrong off macOS.
@@ -290,17 +343,88 @@ showed the bundled Neue Haas (~0.51) beats a squeezed Helvetica substitute
 
 ## Layout, as measured
 
+Shared by every slide type — this is the canvas the artwork defines:
+
 | | |
 |---|---|
 | Canvas | 1920 × 1080 RGBA |
 | Left margin | 91px |
-| Text box | 678px |
 | Font size | 60px |
 | Line height | 72px (auto-leading 1.2 × 60) |
-| Reference gap | 143px below the last verse line |
 | Vertical placement | block centered, snapped to a 197 + 72k grid |
+| Legible width | 741px, where the scrim falls below half opacity |
+
+Verse slides:
+
+| | |
+|---|---|
+| Text box | 678px (deliberately narrower than the scrim) |
+| Weights | Roman body, Medium reference line |
+| Reference gap | 143px below the last verse line |
 | Reference budget | 741px (scrim, not the verse box) |
 | Max verse lines | 12 |
+
+Point slides, measured off `template/point-templates/`:
+
+| | |
+|---|---|
+| Weight | Medium **Italic** at the same 60px |
+| Text box | 741px — points wrap at the scrim, not the verse box |
+| Rolling step | 144px between points = exactly two line heights |
+| Rolling origin | 197px, the same grid origin as everything else |
+| Centered block | `(lines − 1) × 72 + 45` cap-box, centered and snapped |
+
+Nothing in the point templates needed a grid, a margin or a size of its own —
+every line in all ten sits on 197 + 72k at the shared left margin. The two
+things that *are* new are the italic cut and the wider box, and both are
+measured: rendering the templates' own lines in Medium Italic reproduces their
+ink boxes to within a pixel, and their wrapped lines run out to x≈832, which is
+the scrim's legible limit rather than the verse box's 678.
+
+One caveat worth knowing: the two four-line centered templates were placed a
+line apart from each other (`Paraphrase.tif` at 413, `Point.tif` at 341). The
+centering rule reproduces `Paraphrase.tif` and the one- and two-line templates
+besides, so `Point.tif` reads as a hand nudge rather than a rule.
+
+---
+
+## Slide types, and adding one
+
+Retrieval sits behind `providers/` so a new Bible backend costs a class and a
+registry line. Layout now works the same way, for the same reason: the second
+slide type showed that `layout.py` had the reference line baked into it.
+
+```
+layouts/
+  base.py     canvas, the 197 + 72k grid, the scrim, and the Placed/DrawOp IR
+  verse.py    wrapped passage with its reference underneath
+  points.py   short statements: rolling and centered
+```
+
+Every layout ends at the same place — a `Placed`, which is a finished slide as
+draw ops at ink coordinates and nothing else:
+
+```python
+DrawOp(text="The Atonement.", left=91, ink_top=629, weight="medium-italic")
+Placed(ops=(...), stem="point_004")
+```
+
+`render.py` consumes `Placed` and knows nothing else, so it composes a verse
+slide, a rolling point deck, or a slide type nobody has written yet without
+changing. Weights are named (`"roman"`, `"medium-italic"`) rather than font
+paths, so a layout in a different cut of the typeface needs no font code.
+
+Adding a slide type is a module in `layouts/` that returns `Placed` objects,
+plus — if it is another point style — one line in `POINT_STYLES`. The CLI's
+`--style` choices and the MCP `list_layouts` tool are both generated from that
+registry, so a new style shows up in the help text and explains itself to a
+model without either file being touched.
+
+The one deliberate asymmetry: the registry is over point *styles*, not over
+layouts in general. Verse slides take `(text, reference)` pairs and point slides
+take plain strings, so a registry spanning both would have to type its input as
+"anything" and would buy nothing. The axis that actually grows is the styles a
+caller picks between at runtime, and that axis is uniform.
 
 ---
 
@@ -324,7 +448,7 @@ Add or drop a dependency by editing the `dependencies` list in
 ### Everyday commands
 
 ```bash
-./deps/bin/python -m pytest tests/ -q     # 278 tests, ~45s
+./deps/bin/python -m pytest tests/ -q     # 355 tests, ~45s
 ./deps/bin/pyright                        # 0 errors; src is strict
 ./deps/bin/sermonflow "John 17" --dry-run # run the CLI without rendering
 ```
@@ -374,14 +498,14 @@ reference `sermonflow-mcp` by name instead of an absolute venv path.
 | `src/sermonflow/text.py` | Text normalization: artifacts, quote carry, capitalization |
 | `src/sermonflow/wrap.py` | Line breaking: greedy + balanced wrap |
 | `src/sermonflow/fonts.py` | Font selection, metrics, kerning, glyph drawing |
-| `src/sermonflow/layout.py` | Geometry: grid-snapped placement, fit/overflow, scrim budget |
-| `src/sermonflow/render.py` | Gradient, composition, TIFF output |
+| `src/sermonflow/layouts/` | One module per slide type, behind a shared IR (see below) |
+| `src/sermonflow/render.py` | Gradient, composition, TIFF output — layout-agnostic |
 | `src/sermonflow/cli.py` | `sermonflow` command |
 | `src/sermonflow/mcp_server.py` | `sermonflow-mcp` MCP server |
 | `src/sermonflow/providers/` | Retrieval behind `BibleProvider` (ESV API, BibleGateway) |
 | `src/sermonflow/assets/fonts/` | Bundled Neue Haas Grotesk Display Pro |
 | `compare.py` | Dev tool: diff generated slides against a reference deck |
-| `tests/` | 278 tests |
+| `tests/` | 355 tests |
 | `docs/DATABASE_AND_PACKAGING.md` | Design: slide cache/database + zip packaging |
 
 ---
@@ -397,9 +521,11 @@ reference `sermonflow-mcp` by name instead of an absolute venv path.
   slides the sermon actually needs — reference extraction, point-vs-passage
   judgement, deck ordering. This is where the LLM/MCP integration earns its
   place; everything downstream is already deterministic and tested.
-- **Point slides.** A second slide type: short emphasis line, no reference,
-  centered, bold. `block_height`/`block_top` are the only places the reference
-  line is assumed. Waiting on a reference example to measure against.
+- **Point slides — done.** Two styles, both measured off
+  `template/point-templates/`: `rolling` (the list builds up, one point revealed
+  per slide) and `centered` (one statement per slide). The guess recorded here
+  before the templates existed — *centered, bold* — was half right: the deck is
+  Medium **Italic**, and the rolling style is not centered at all.
 - **Smaller things:** split an over-long verse across two slides instead of
   raising; wrap the reference line; LZW-compressed TIFF or PNG output; a
   `--compress` flag.

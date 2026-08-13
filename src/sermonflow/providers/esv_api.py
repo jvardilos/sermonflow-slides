@@ -21,6 +21,7 @@ from typing import Any
 import requests
 
 from ..text import Verse
+from .base import format_citation
 
 API_URL = "https://api.esv.org/v3/passage/text/"
 
@@ -79,19 +80,20 @@ class EsvApiProvider:
         passages: list[str] = data.get("passages") or []
         if not passages:
             raise ValueError(f"no passage returned for {reference!r}")
-        # canonical is the normalized reference, e.g. "John 3"; drop any verse
-        # tail so the per-verse label is "Book Chapter:Verse".
-        canonical: str = (data.get("canonical") or reference).split(":")[0].strip()
+        # canonical is the API's own normalized reference -- "John 3", but
+        # "Jude 1-25" for a single-chapter book. Passed through verbatim;
+        # format_citation parses it.
+        canonical: str = data.get("canonical") or reference
         return parse_passage_text("\n".join(passages), canonical)
 
 
-def parse_passage_text(passage_text: str, book_chapter: str) -> list[Verse]:
+def parse_passage_text(passage_text: str, label: str) -> list[Verse]:
     """
     Split ESV passage text on its inline `[n]` verse markers.
 
     Args:
         passage_text: the API's plain-text passage, verses prefixed with `[n]`.
-        book_chapter: the canonical "Book Chapter", used to build each label.
+        label: the source's passage label, e.g. "John 3" or "Jude 1-25".
 
     Returns [(verse_text, "Book Chapter:Verse ESV"), ...] in verse order.
     Raises ValueError if no verse markers are present.
@@ -108,5 +110,5 @@ def parse_passage_text(passage_text: str, book_chapter: str) -> list[Verse]:
         text = _WHITESPACE_RE.sub(" ", passage_text[start:end]).strip()
         if not text:
             continue
-        verses.append((text, f"{book_chapter}:{verse_num} {_TRANSLATION}"))
+        verses.append((text, format_citation(label, verse_num, _TRANSLATION)))
     return verses

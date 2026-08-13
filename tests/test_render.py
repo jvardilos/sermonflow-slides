@@ -415,30 +415,46 @@ class TestKerning:
 
             assert np.array_equal(np.array(native), np.array(ours)), text
 
-    def test_rendered_ink_matches_native_shaped_width(self):
+    def test_rendered_ink_matches_the_wrap_metric(self):
         """
         Measurement and rendering must agree, or wrapping is fiction.
 
-        Pillow built with Raqm (HarfBuzz) shapes and kerns text natively, so
-        the width that lands on the slide is Pillow's own shaped ``textlength``.
-        That is the number rendering has to honour, and the rendered ink does.
+        The number to check against is ``text_measurer`` -- the metric the wrap
+        functions and TEXT_BOX_WIDTH are both stated in. If the ink that lands
+        on the slide is that wide, then a line that measured as fitting fits.
 
-        ``text_measurer`` applies the module's own GPOS pair kerning *on top* of
-        Pillow's native shaping. With Raqm present that makes it a deliberately
-        conservative -- slightly tighter -- wrap metric: it can only ever break
-        a line early, never overflow the box (the box-bound tests above cover
-        that). So the fidelity check here is against native shaping, not against
-        that intentionally tighter measure.
+        This deliberately does *not* compare against Pillow's ``textlength``,
+        which is not one number: on a Pillow built with Raqm (HarfBuzz) it is
+        already shaped and kerned, and on a build without Raqm it is the bare
+        sum of advance widths. The renderer applies GPOS kerning either way --
+        that is what matches the reference deck -- so on a non-Raqm build the
+        rendered ink is legitimately narrower than ``textlength`` by the whole
+        kerning delta (~30px on this string). Asserting against ``textlength``
+        made this a Raqm detector rather than a fidelity check.
+        """
+        verse, _ = slidegen.load_fonts()
+        text = 'AVATAR, Yesterday we saw'
+        measured = slidegen.text_measurer(verse)(text)
+        img = slidegen.compose_slide(text, 'Book 1:1 ESV', max_width=10_000)
+        left, right, _, _ = ink_bounds(img)
+        assert abs((right - left) - measured) <= 4
+
+    def test_wrap_metric_never_exceeds_what_pil_will_lay_out(self):
+        """
+        The no-overflow guarantee, and it holds on either Pillow build.
+
+        Kerning only ever tightens, so the measured width is at most Pillow's
+        own layout width. A line can therefore break early but can never run
+        past the box -- which is the property the box-bound tests rely on.
         """
         from PIL import Image, ImageDraw
 
         verse, _ = slidegen.load_fonts()
-        text = 'AVATAR, Yesterday we saw'
-        native = ImageDraw.Draw(Image.new('RGBA', (1, 1))).textlength(
-            text, font=verse.font)
-        img = slidegen.compose_slide(text, 'Book 1:1 ESV', max_width=10_000)
-        left, right, _, _ = ink_bounds(img)
-        assert abs((right - left) - native) <= 4
+        scratch = ImageDraw.Draw(Image.new('RGBA', (1, 1)))
+        for text in ('AVATAR, Yesterday we saw', 'When Jesus had spoken',
+                     'Yo, To, Wa, Av, Ta'):
+            native = scratch.textlength(text, font=verse.font)
+            assert slidegen.text_measurer(verse)(text) <= native + 0.5, text
 
     def test_face_accepts_a_bare_pil_font(self):
         """Library callers passing a raw PIL font must keep working."""

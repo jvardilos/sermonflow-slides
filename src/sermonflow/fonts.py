@@ -38,12 +38,18 @@ from .wrap import Measure
 
 FONT_SIZE = 60
 
-#: weight name -> bundled Neue Haas filename under assets/fonts.
+#: weight name -> bundled Neue Haas filename under assets/fonts. Layouts name a
+#: weight from this table rather than a file, so a layout never has to know
+#: that Medium's file is spelled "Mediu".
 WEIGHTS: dict[str, str] = {
     "roman": "NeueHaasDisplayRoman.ttf",
     "medium": "NeueHaasDisplayMediu.ttf",
     "bold": "NeueHaasDisplayBold.ttf",
     "black": "NeueHaasDisplayBlack.ttf",
+    "roman-italic": "NeueHaasDisplayRomanItalic.ttf",
+    "medium-italic": "NeueHaasDisplayMediumItalic.ttf",
+    "bold-italic": "NeueHaasDisplayBoldItalic.ttf",
+    "black-italic": "NeueHaasDisplayBlackItalic.ttf",
 }
 
 #: Verse body. The PSD specifies 55 Roman.
@@ -57,9 +63,12 @@ VERSE_WEIGHT = "roman"
 #: any of them.
 REFERENCE_WEIGHT = "medium"
 
-#: Point slides: a short line of emphasis with no reference. Provisional --
-#: pending a reference example to measure against.
-POINT_WEIGHT = "bold"
+#: Point slides. Measured, not guessed: rendering the point templates' lines in
+#: Medium Italic reproduces their ink boxes to within a pixel horizontally and
+#: exactly vertically, while Bold Italic -- what this constant provisionally
+#: held before template/point-templates/ existed -- runs about 25px wide on a
+#: 26-character line. See layouts/points.py for the full measurement.
+POINT_WEIGHT = "medium-italic"
 
 #: (path, collection index). Bundled Neue Haas is plain TTF, so index is 0.
 _FontFace = tuple[str, int]
@@ -261,34 +270,40 @@ def kern_width(text: str, kerning: _Kerning | None, size: int = FONT_SIZE) -> fl
 # ---------------------------------------------------------------------------
 
 
-@lru_cache(maxsize=4)
-def load_fonts(size: int = FONT_SIZE) -> tuple[Face, Face]:
+@lru_cache(maxsize=16)
+def load_face(weight: str, size: int = FONT_SIZE) -> Face:
     """
-    (verse_face, reference_face), each a Face.
+    The Face for one named weight from WEIGHTS.
+
+    This is the general entry point: a layout picks a weight by name and gets a
+    kerned Face back, so adding a slide type set in a different cut of the
+    typeface takes no font code at all. load_fonts is the verse pipeline's
+    two-face shorthand over it.
 
     Falls back to PIL's bitmap default only if the bundled font cannot be read,
     which makes output non-reference-matching but keeps the pipeline runnable.
     """
-    if FONT_PATH and os.path.exists(FONT_PATH):
+    filename = WEIGHTS.get(weight)
+    if filename is None:
+        raise ValueError(
+            f"unknown weight {weight!r}; choose from {', '.join(WEIGHTS)}"
+        )
+    path = _font_file(filename)
+    if os.path.exists(path):
         try:
-            return (
-                Face(
-                    ImageFont.truetype(FONT_PATH, size, index=FONT_INDEX_REGULAR),
-                    _load_kerning(FONT_PATH, FONT_INDEX_REGULAR),
-                ),
-                Face(
-                    ImageFont.truetype(FONT_PATH_MEDIUM, size, index=FONT_INDEX_MEDIUM),
-                    _load_kerning(FONT_PATH_MEDIUM, FONT_INDEX_MEDIUM),
-                ),
-            )
+            return Face(ImageFont.truetype(path, size), _load_kerning(path, 0))
         except OSError:
             pass
     # Defensive: only reached if the bundled font cannot be read. load_default
     # returns the freetype face when Pillow has freetype (which truetype above
     # also requires), so the cast holds for every Pillow this runs on.
-    default = cast(FreeTypeFont, ImageFont.load_default(size))
-    fallback = Face(default)
-    return fallback, fallback
+    return Face(cast(FreeTypeFont, ImageFont.load_default(size)))
+
+
+@lru_cache(maxsize=4)
+def load_fonts(size: int = FONT_SIZE) -> tuple[Face, Face]:
+    """(verse_face, reference_face) -- the pair the verse layout draws with."""
+    return load_face(VERSE_WEIGHT, size), load_face(REFERENCE_WEIGHT, size)
 
 
 def _as_face(font: Face | FreeTypeFont) -> Face:
