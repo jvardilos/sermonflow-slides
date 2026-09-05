@@ -684,6 +684,22 @@ def kern_width(text, kerning, size=FONT_SIZE):
     return units * size / kerning.upem
 
 
+#: PIL picks its layout engine at import: Raqm when libraqm is present in the
+#: Pillow build, BASIC otherwise. That choice is not cosmetic here. Raqm applies
+#: GPOS itself, and this module applies pair kerning by hand precisely BECAUSE
+#: basic layout ignores GPOS -- so under Raqm every kerned pair is adjusted
+#: twice and measurement stops describing what is drawn.
+#:
+#: Measured: macOS wheels here have no libraqm, ubuntu-24.04's do, and the same
+#: commit rendered 'AVATAR, Yesterday we saw' 26px narrower than
+#: text_measurer() predicted on the runner while agreeing exactly on this
+#: machine. Every layout constant in this file was fitted under basic layout,
+#: so that is pinned rather than inherited -- a render that changes with a
+#: transitive C library nobody declared is the same class of failure as the
+#: font fallback above.
+_LAYOUT = ImageFont.Layout.BASIC
+
+
 @lru_cache(maxsize=4)
 def load_fonts(size=FONT_SIZE):
     """
@@ -695,10 +711,12 @@ def load_fonts(size=FONT_SIZE):
     if FONT_PATH and os.path.exists(FONT_PATH):
         try:
             return (
-                Face(ImageFont.truetype(FONT_PATH, size, index=FONT_INDEX_REGULAR),
+                Face(ImageFont.truetype(FONT_PATH, size, index=FONT_INDEX_REGULAR,
+                                        layout_engine=_LAYOUT),
                      _load_kerning(FONT_PATH, FONT_INDEX_REGULAR)),
                 Face(ImageFont.truetype(FONT_PATH_MEDIUM, size,
-                                        index=FONT_INDEX_MEDIUM),
+                                        index=FONT_INDEX_MEDIUM,
+                                        layout_engine=_LAYOUT),
                      _load_kerning(FONT_PATH_MEDIUM, FONT_INDEX_MEDIUM)),
             )
         except OSError:
