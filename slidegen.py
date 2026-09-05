@@ -54,6 +54,20 @@ FONT_SIZE = 60
 _USER_FONTS = os.path.expanduser('~/Library/Fonts')
 _HELVETICA = '/System/Library/Fonts/HelveticaNeue.ttc'
 
+#: The copies committed alongside this file. Both paths above are macOS-only,
+#: so off a Mac neither resolved, `_choose_fonts` returned 'none', and
+#: `load_fonts` fell to PIL's bitmap default. That is not a smaller version of
+#: the same output: the glyph-coverage check stops finding ANY unrenderable
+#: character -- CJK, Hebrew and emoji all report as drawable -- and text
+#: measures 118px against a 678px box, so validation passes everything and the
+#: wrapper packs whole verses onto one line. Measured on ubuntu-24.04, where it
+#: failed 6 tests in test_edge_cases.py that pass on macOS: the suite was green
+#: here only because this machine happens to have the font installed.
+#:
+#: font/ has been tracked in this repo the whole time and was never consulted,
+#: because the candidates below were built solely from _USER_FONTS.
+_REPO_FONTS = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'font')
+
 #: weight name -> (Neue Haas filename, Helvetica Neue collection index).
 #: Helvetica has no plain Black, so 'black' falls back to its Bold.
 WEIGHTS = {
@@ -86,6 +100,16 @@ def _font_choices(verse_weight, reference_weight):
         ('Neue Haas Grotesk Display Pro',
          (os.path.join(_USER_FONTS, verse[0]), 0),
          (os.path.join(_USER_FONTS, reference[0]), 0),
+         1.0),
+        # Same typeface, same scale, so this is a location fallback rather than
+        # a substitution -- and it is ordered AFTER the installed copy so a Mac
+        # with the font in ~/Library/Fonts resolves exactly as it did before.
+        # It ranks above Helvetica because it IS the reference face: falling to
+        # a 1/1.10-condensed substitute while the real font sits in the repo
+        # would be choosing the worse render.
+        ('Neue Haas Grotesk Display Pro',
+         (os.path.join(_REPO_FONTS, verse[0]), 0),
+         (os.path.join(_REPO_FONTS, reference[0]), 0),
          1.0),
         ('Helvetica Neue (substitute)',
          (_HELVETICA, verse[1]),

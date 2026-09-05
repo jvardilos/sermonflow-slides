@@ -354,7 +354,17 @@ class TestKerning:
     def test_kerning_is_ignored_for_the_substitute(self):
         """Helvetica Neue carries only a legacy 'kern' table, which is
         deliberately not read -- its scale was fitted without it."""
-        path, index = slidegen.FONT_CHOICES[1][1]
+        # Located BY NAME, not by position. This read FONT_CHOICES[1] until a
+        # repo-local Neue Haas candidate was inserted ahead of Helvetica, at
+        # which point index 1 named a face that DOES carry GPOS kerning -- so
+        # the assertion below ran against the wrong font and went red without
+        # the behaviour it pins having changed at all.
+        substitute = next(
+            (c for c in slidegen.FONT_CHOICES if c[0].startswith('Helvetica')),
+            None,
+        )
+        assert substitute is not None, 'no Helvetica substitute candidate'
+        path, index = substitute[1]
         if not os.path.exists(path):
             pytest.skip('Helvetica Neue not present')
         assert slidegen._load_kerning(path, index) is None
