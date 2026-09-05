@@ -1,0 +1,30 @@
+name: gitleaks
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  gitleaks:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        # PINNED: gitleaks 8.30 removed the `detect` subcommand, so an unpinned
+        # install silently breaks a workflow written against the old CLI.
+        env:
+          GITLEAKS_VERSION: 8.30.1
+        run: |
+          set -euo pipefail
+          curl -sSfL "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz" \
+            | tar -xz gitleaks
+          ./gitleaks version
+
+      - name: Scan history
+        run: ./gitleaks git . --redact --no-banner --exit-code 1
+
+      - name: Scan working tree
+        run: ./gitleaks dir . --redact --no-banner --exit-code 1
