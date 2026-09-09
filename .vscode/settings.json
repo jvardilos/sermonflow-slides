@@ -1,0 +1,26 @@
+{
+  // Point VS Code at the project's virtualenv so Pylance resolves Pillow, mcp,
+  // bs4, etc. and imports stop showing as "not detected". If your venv lives
+  // somewhere other than ./deps, update this path (and tasks/launch).
+  "python.defaultInterpreterPath": "${workspaceFolder}/deps/bin/python",
+
+  // The package lives under src/ and is installed editable, but listing src as
+  // an analysis path makes "sermonflow" resolve even before an editable install.
+  "python.analysis.extraPaths": ["src"],
+  "python.analysis.autoImportCompletions": true,
+
+  // Type checking mode and the strict/relaxed split come from [tool.pyright] in
+  // pyproject.toml, so it is intentionally not set here (setting it would
+  // override that config).
+
+  // Tests: pytest, discovered from tests/.
+  "python.testing.pytestEnabled": true,
+  "python.testing.unittestEnabled": false,
+  "python.testing.pytestArgs": ["tests"],
+
+  // Keep the explorer tidy.
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true
+  }
+}

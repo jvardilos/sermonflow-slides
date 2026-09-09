@@ -1,0 +1,10 @@
+{
+  // Extensions VS Code will offer to install for this workspace.
+  "recommendations": [
+    "ms-python.python",          // Python language support + test/debug integration
+    "ms-python.vscode-pylance",  // fast type checking; reads [tool.pyright] from pyproject.toml
+    "ms-python.debugpy",         // the debugger the launch configs use
+    "tamasfe.even-better-toml",  // syntax + validation for pyproject.toml
+    "tyriar.luna-paint"          // open/view .tif (and other image) files, which VS Code cannot do natively
+  ]
+}

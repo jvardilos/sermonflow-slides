@@ -1,5 +1,10 @@
 __pycache__
+.pytest_cache
 deps
 slides
 *.tif
 *.psd
+
+# packaging / build artifacts
+build/
+dist/
