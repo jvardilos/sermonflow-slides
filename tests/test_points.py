@@ -158,9 +158,94 @@ class TestPointTypography:
         assert [op.text for op in placed.ops] == ["A statement."]
 
 
+class TestStackedGeometry:
+    """
+    The standalone style, measured off "Run Week Two Points" -- 15 slides the
+    church set by hand for Run week 2 on 2026-09-17.
+
+    That deck is artwork and is not committed, so its measurements are written
+    here as data instead: RUN2_PARAGRAPH_TOPS is the ink top of every paragraph
+    on every slide of it, read off the pixels. The tests below pin our geometry
+    against those numbers rather than against the files.
+    """
+
+    #: Ink top of each paragraph, and of the slide's last line, per reference
+    #: slide: {slide number: ([paragraph tops], last line top)}.
+    RUN2_PARAGRAPH_TOPS = {
+        1: ([494], 494), 2: ([422], 566), 3: ([462], 534), 4: ([462], 534),
+        5: ([462], 534), 6: ([463], 534), 7: ([225, 369, 513, 657, 801], 801),
+        8: ([439], 511), 9: ([455], 528), 10: ([389, 533], 605),
+        11: ([380, 524], 667), 12: ([343, 487], 630), 13: ([338, 482], 699),
+        14: ([338, 555], 699), 15: ([339, 554], 698),
+    }
+
+    def test_single_line_sits_below_the_snapped_grid(self):
+        # 498 against `centered`'s 485: this deck does not snap to GRID_ORIGIN.
+        placed = slidegen.plan_stacked(["RECOGNIZE THE LIE."])[0]
+        assert ink_tops(placed) == [498]
+        assert slidegen.centered_top(1) == 485
+
+    def test_two_line_statement_matches_the_reference_top(self):
+        placed = slidegen.plan_stacked(["A LIE DISTORTS WHAT GOD SAID."])[0]
+        assert ink_tops(placed) == [462, 534]
+
+    def test_paragraphs_are_a_rolling_step_apart(self):
+        placed = slidegen.plan_stacked(["The lie.\nThe truth is longer so it wraps here."])[0]
+        tops = ink_tops(placed)
+        assert tops == [390, 534, 606]          # 1 line, gap of 144, 2 lines
+        assert tops[1] - tops[0] == slidegen.ROLLING_STEP
+
+    def test_five_single_line_paragraphs_centre_on_the_block(self):
+        placed = slidegen.plan_stacked(["\n".join(["Step."] * 5)])[0]
+        assert ink_tops(placed) == [210, 354, 498, 642, 786]
+
+    def test_every_line_starts_at_the_decks_own_margin(self):
+        placed = slidegen.plan_stacked(["THE LIE: “I am alone.”\nTHE TRUTH: “He will not leave you.”"])[0]
+        assert {op.left for op in placed.ops} == {70}
+        assert slidegen.STACK_LEFT_MARGIN == 70 != slidegen.LEFT_MARGIN
+
+    def test_wraps_to_the_unstretched_scrim(self):
+        # The hand-made deck stretched the scrim and ran past this; we do not.
+        assert slidegen.STACK_BOX_WIDTH == 762
+        long_line = "word " * 60
+        placed = slidegen.plan_stacked([long_line])[0]
+        measure = slidegen.text_measurer(slidegen.load_face(slidegen.POINT_WEIGHT))
+        assert all(measure(op.text) <= slidegen.STACK_BOX_WIDTH for op in placed.ops)
+
+    def test_nothing_accumulates_between_slides(self):
+        deck = slidegen.plan_stacked(["First.", "Second."])
+        assert len(deck) == 2
+        assert [op.text for op in deck[1].ops] == ["Second."]
+
+    def test_a_block_too_tall_to_fit_raises(self):
+        with pytest.raises(slidegen.SlideOverflowError, match="split it"):
+            slidegen.plan_stacked(["\n".join(["Step."] * 8)])
+
+    def test_blank_entry_raises(self):
+        with pytest.raises(slidegen.EmptyVerseError):
+            slidegen.plan_stacked(["\n   \n"])
+
+    def test_centres_land_within_the_reference_decks_own_spread(self):
+        """
+        Every reference block centre reproduced within 26px.
+
+        The hand-made deck is centred by eye: its own 15 centres run from 497
+        to 546. This style puts every block at STACK_CENTER, so the test asks
+        that we land inside that hand spread, not that we match a given slide.
+        """
+        centres = [
+            (tops[0] + last + slidegen.CAP_HEIGHT) / 2
+            for tops, last in self.RUN2_PARAGRAPH_TOPS.values()
+        ]
+        assert min(centres) == 497.5 and max(centres) == 546.0
+        tops = ink_tops(slidegen.plan_stacked(["RECOGNIZE THE LIE."])[0])
+        ours = (tops[0] + tops[-1] + slidegen.CAP_HEIGHT) / 2
+        assert all(abs(ours - c) <= 26 for c in centres)
+
+
 class TestPointStyleRegistry:
     def test_both_styles_registered(self):
-        assert set(slidegen.point_style_names()) == {"rolling", "centered"}
+        assert set(slidegen.point_style_names()) == {"rolling", "centered", "stacked"}
 
     def test_default_is_registered(self):
         assert slidegen.DEFAULT_POINT_STYLE in slidegen.POINT_STYLES

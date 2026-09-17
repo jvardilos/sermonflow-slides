@@ -44,6 +44,7 @@ from .base import (
     LINE_HEIGHT,
     MAX_TEXT_WIDTH,
     MIN_BOTTOM_MARGIN,
+    SCRIM_LIMIT,
     SLIDE_HEIGHT,
     DrawOp,
     EmptyVerseError,
@@ -160,4 +161,83 @@ def plan_centered(points: Sequence[str], stem: str = "point") -> list[Placed]:
                 f"point {i} needs {len(lines)} lines, more than a slide holds"
             )
         slides.append(Placed(_ops(lines, top), f"{stem}_{i:03d}"))
+    return slides
+
+
+# ---------------------------------------------------------------------------
+# Stacked: several paragraphs on one standalone slide
+# ---------------------------------------------------------------------------
+
+#: Measured off "Run Week Two Points" (15 slides the church produced by hand for
+#: Run week 2, 2026-09-17) rather than template/point-templates/. That deck sets
+#: its text from x=70, not the 91 the older templates and the verse deck share,
+#: so this style keeps its own margin instead of pretending the two agree.
+STACK_LEFT_MARGIN = 70
+
+#: Ink-block centre. The deck is centred by eye, not snapped: the 15 blocks
+#: centre between 497 and 546 with a mean of 524 and a median of 520. 520
+#: reproduces every one of them within 26px, and the six one-statement slides
+#: within 4px. Nothing here snaps to GRID_ORIGIN, which is the visible
+#: difference from `centered` -- that style would put a single line at 485 where
+#: this deck has 494.
+STACK_CENTER = 520
+
+#: The reference deck stretched the scrim horizontally on its widest slides and
+#: let line ends sit on alpha as low as ~50. This style does not: it wraps to
+#: the unstretched scrim's legible limit, so a stacked slide needs more lines
+#: than the hand-made one in exchange for keeping every line on legible
+#: background. Stretching the scrim per slide would have to reach render.py
+#: through Placed, which is a change to the IR every layout shares.
+STACK_BOX_WIDTH = SCRIM_LIMIT - STACK_LEFT_MARGIN
+
+
+def stacked_blocks(paragraphs: Sequence[Sequence[str]]) -> tuple[list[int], int]:
+    """
+    (ink top per paragraph, total ink height) for one stacked slide.
+
+    Paragraphs are ROLLING_STEP apart -- the same 144 the rolling style reveals
+    on, and the same gap the reference deck leaves between a lie and its truth.
+    """
+    spans = [(len(lines) - 1) * LINE_HEIGHT for lines in paragraphs]
+    total = sum(spans) + ROLLING_STEP * (len(paragraphs) - 1) + CAP_HEIGHT
+    tops: list[int] = []
+    top = round(STACK_CENTER - total / 2)
+    for span in spans:
+        tops.append(top)
+        top += span + ROLLING_STEP
+    return tops, total
+
+
+def plan_stacked(points: Sequence[str], stem: str = "point") -> list[Placed]:
+    """
+    One standalone slide per entry, centred, with blank-line-separated
+    paragraphs stacked on it.
+
+    Unlike `rolling`, nothing accumulates: each slide stands alone. Unlike
+    `centered`, one slide can hold several paragraphs -- a lie and its truth, or
+    a five-step list -- separated in the input by a newline.
+    """
+    slides: list[Placed] = []
+    for i, text in enumerate(points, 1):
+        paragraphs = [
+            wrap_point(part, STACK_BOX_WIDTH)
+            for part in text.split("\n")
+            if part.strip()
+        ]
+        if not paragraphs:
+            raise EmptyVerseError(f"point {i} has no renderable text")
+        tops, total = stacked_blocks(paragraphs)
+        if not fits(tops[0], total):
+            raise SlideOverflowError(
+                f"point {i} stacks to {total}px, taller than the "
+                f"{SLIDE_HEIGHT - MIN_BOTTOM_MARGIN}px safe area holds; "
+                f"split it across two slides"
+            )
+        ops: tuple[DrawOp, ...] = ()
+        for lines, top in zip(paragraphs, tops):
+            ops += tuple(
+                DrawOp(line, STACK_LEFT_MARGIN, top + k * LINE_HEIGHT, POINT_WEIGHT)
+                for k, line in enumerate(lines)
+            )
+        slides.append(Placed(ops, f"{stem}_{i:03d}"))
     return slides
