@@ -108,6 +108,11 @@ def parse_chapter(html: str, translation: str = DEFAULT_TRANSLATION) -> list[Ver
             junk.decompose()
         for junk in span.find_all("span", class_="chapternum"):
             junk.decompose()
+        # The divine name (LORD, GOD) is small capitals in print, which the page
+        # does with CSS over the text "Lord". Keeping only the text would turn
+        # YHWH into Adonai, so the capitals are made literal here.
+        for name in span.find_all("span", class_="small-caps"):
+            name.replace_with(name.get_text().upper())
 
         text = _WHITESPACE_RE.sub(" ", span.get_text()).strip()
         if not text:

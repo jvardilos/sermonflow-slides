@@ -106,6 +106,27 @@ class TestBibleGatewayParse:
         verses = parse_chapter(self.HTML, "ESV")
         assert all("heading" not in text for text, _ in verses)
 
+    def test_small_caps_divine_name_is_upper_cased(self):
+        # The ESV prints the divine name in small capitals; BibleGateway marks
+        # it with a CSS span whose text is "Lord". Dropping the span silently
+        # turns LORD (YHWH) into Lord (Adonai) -- a different word on screen.
+        html = """
+        <div class="bcv"><div class="dropdown-display-text">Genesis 2</div></div>
+        <div class="passage-content"><div class="version-ESV"><p>
+          <span id="en-ESV-47" class="text Gen-2-16"><sup class="versenum">16 </sup>And the
+          <span style="font-variant: small-caps" class="small-caps">Lord</span> God
+          commanded the man, the <span class="small-caps">Lord</span>’s word,</span>
+          <span class="text Gen-2-17"><sup class="versenum">17 </sup>O Lord
+          <span class="small-caps">God</span>, and the Lord Jesus</span>
+        </p></div></div>
+        """
+        verses = parse_chapter(html, "ESV")
+        assert verses[0][0] == (
+            "And the LORD God commanded the man, the LORD’s word,"
+        )
+        # Plain "Lord" is Adonai / Kyrios and stays as written.
+        assert verses[1][0] == "O Lord GOD, and the Lord Jesus"
+
     def test_missing_passage_raises(self):
         with pytest.raises(ValueError, match="no passage found"):
             parse_chapter("<html><body>nothing here</body></html>", "ESV")
