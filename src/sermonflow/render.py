@@ -86,9 +86,10 @@ def render_deck(slides: Sequence[Placed], output_dir: str = "./slides") -> list[
     decks stay in verse order and point decks in reveal order in any file
     browser or import dialog.
     """
-    os.makedirs(output_dir, exist_ok=True)
+    expanded_dir = os.path.expanduser(output_dir)
+    os.makedirs(expanded_dir, exist_ok=True)
     return [
-        render(placed, os.path.join(output_dir, f"{placed.stem}.tif"))
+        render(placed, os.path.join(expanded_dir, f"{placed.stem}.tif"))
         for placed in slides
     ]
 
