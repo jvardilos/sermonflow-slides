@@ -31,10 +31,15 @@ def _esv_api() -> BibleProvider:
     return EsvApiProvider(key)
 
 
+def _bible_gateway() -> BibleProvider:
+    """The BibleGateway scraper, which needs no configuration."""
+    return BibleGatewayProvider()
+
+
 #: Canonical name -> factory. Adding a backend is one entry here.
 PROVIDERS: dict[str, Callable[[], BibleProvider]] = {
     "esv-api": _esv_api,
-    "bible-gateway": BibleGatewayProvider,
+    "bible-gateway": _bible_gateway,
 }
 
 #: Other spellings get_provider accepts, each mapped to a key of PROVIDERS.

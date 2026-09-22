@@ -33,6 +33,7 @@ from .layouts import (
     point_style_names,
 )
 from .providers import DEFAULT_TRANSLATION, BibleProvider, get_default_provider, get_provider
+from .providers.registry import PROVIDERS
 from .render import generate_points, generate_slides, plan_points
 from .text import Verse, find_artifacts, format_verses
 
@@ -89,6 +90,21 @@ def preview_lines(verses: Sequence[Verse]) -> list[tuple[str, list[str]]]:
     return out
 
 
+def passage_fits(verses: Sequence[Verse]) -> bool:
+    """
+    Whether the passage can be rendered at all: every verse lays out on a slide
+    and at least one has text.
+
+    This is the line --no-strict (strict=false over MCP) cannot cross. Other
+    problems are doubts the renderer can draw past; these make it raise, or
+    render nothing.
+    """
+    try:
+        return bool(preview_lines(verses))
+    except SlideOverflowError:
+        return False
+
+
 def build(
     reference: str,
     output_dir: str = "./slides",
@@ -111,6 +127,10 @@ def build(
         print(f"{len(problems)} problem(s) found:", file=sys.stderr)
         for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
+        if not dry_run and not passage_fits(verses):
+            raise SystemExit(
+                "cannot render this passage as it stands; --no-strict will not help"
+            )
         if strict and not dry_run:
             raise SystemExit("refusing to render; pass --no-strict to override")
 
@@ -170,6 +190,17 @@ def preview_points(
     ]
 
 
+def points_fit(points: Sequence[str], style: str = DEFAULT_POINT_STYLE) -> bool:
+    """As `passage_fits`, for a deck: a known style, some text, and a plan that fits."""
+    if style not in point_style_names():
+        return False
+    try:
+        plan_points(points, style)
+    except (SlideOverflowError, EmptyVerseError):
+        return False
+    return True
+
+
 def build_points(
     points: Sequence[str],
     output_dir: str = "./slides",
@@ -184,6 +215,10 @@ def build_points(
         print(f"{len(problems)} problem(s) found:", file=sys.stderr)
         for problem in problems:
             print(f"  - {problem}", file=sys.stderr)
+        if not dry_run and not points_fit(points, style):
+            raise SystemExit(
+                "cannot render these points as given; --no-strict will not help"
+            )
         if strict and not dry_run:
             raise SystemExit("refusing to render; pass --no-strict to override")
 
@@ -234,7 +269,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "-p",
         "--provider",
         default=None,
-        help="force a backend: 'esv-api' or 'bible-gateway' (default: auto)",
+        help=f"force a backend: {' or '.join(map(repr, PROVIDERS))} (default: auto)",
     )
     parser.add_argument(
         "-n",

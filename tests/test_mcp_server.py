@@ -128,3 +128,34 @@ class TestStrictHint:
         result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path))
         assert not result['rendered']
         assert 'strict=false' in result['hint']
+        forced = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path), strict=False)
+        assert forced['rendered'] and forced['count'] == 1
+
+    def test_passage_with_no_text_is_refused_even_when_not_strict(self, monkeypatch, tmp_path):
+        # Every verse empty: rendering would "succeed" with zero slides.
+        serve(monkeypatch, [('   ', 'Book 1:1 ESV'), ('', 'Book 1:2 ESV')])
+        result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path), strict=False)
+        assert not result['rendered']
+        assert 'strict=false' not in result['hint']
+        assert os.listdir(tmp_path) == []
+
+    @pytest.mark.parametrize(
+        'points,style',
+        [(['  ', '\n'], 'stacked'), (['One.'], 'sideways')],
+        ids=['no-text', 'unknown-style'],
+    )
+    def test_decks_that_cannot_plan_are_refused_even_when_not_strict(
+        self, points, style, tmp_path
+    ):
+        result = mcp_server.generate_points(
+            points, style=style, output_dir=str(tmp_path), strict=False
+        )
+        assert not result['rendered']
+        assert 'strict=false' not in result['hint']
+
+
+class TestPreviewSlides:
+    def test_a_verse_too_long_is_reported_not_raised(self, monkeypatch):
+        serve(monkeypatch, [(dummy_text(OVERFLOW_WORDS), 'Book 1:1 ESV')])
+        result = mcp_server.preview_slides('Book 1')
+        assert any('Book 1:1 ESV' in problem for problem in result['problems'])
