@@ -50,7 +50,11 @@ from .cli import (
 )
 from .layouts import DEFAULT_POINT_STYLE, POINT_STYLES
 from .providers import DEFAULT_TRANSLATION
-from .render import generate_points as _render_points, generate_slides as _render_slides
+from .render import (
+    generate_points as _render_points,
+    generate_slides as _render_slides,
+    run_dir,
+)
 
 mcp = MCPServer("sermonflow-slides", version=__version__)
 
@@ -156,7 +160,9 @@ def generate_slides(
     Args:
         reference: book and chapter, e.g. "John 17".
         translation: version code (default ESV; ignored by the ESV API backend).
-        output_dir: folder to write the TIFF slides into (created if missing).
+        output_dir: folder to write the TIFF slides into. Each run gets its
+            own timestamped subfolder of it, so one render never
+            overwrites another's; the result reports that folder.
         strict: when True, refuse to render if validation finds any problem and
             return those problems instead of writing files. When False, a
             verse too long for a slide is skipped (the problems name it) and
@@ -189,7 +195,9 @@ def generate_slides(
     # Straight to the renderer rather than through cli.build: that would fetch
     # the passage a second time and print its summary onto stdout, which over
     # stdio is the protocol stream.
-    output_dir = _resolve_dir(output_dir)
+    # A folder of this run's own, so nothing here overwrites an earlier deck
+    # or leaves one of its slides standing in for a verse this run skipped.
+    output_dir = run_dir(_resolve_dir(output_dir))
     paths = _render_slides(verses, output_dir=output_dir, formatted=True)
     result: dict[str, Any] = {
         "reference": reference,
@@ -298,7 +306,9 @@ def generate_points(
         points: the statements, in the order they should appear on screen.
         style: "rolling" (default), "centered" or "stacked"; see
             preview_points and list_layouts.
-        output_dir: folder to write the TIFF slides into (created if missing).
+        output_dir: folder to write the TIFF slides into. Each run gets its
+            own timestamped subfolder of it, so one render never
+            overwrites another's; the result reports that folder.
         strict: when True, refuse to render if validation finds any problem and
             return those problems instead of writing files. Points that cannot
             be laid out at all are refused either way.
@@ -322,7 +332,7 @@ def generate_points(
         }
 
     # As in generate_slides: the renderer directly, so nothing reaches stdout.
-    output_dir = _resolve_dir(output_dir)
+    output_dir = run_dir(_resolve_dir(output_dir))
     paths = _render_points(points, output_dir=output_dir, style=style)
     result: dict[str, Any] = {
         "style": style,

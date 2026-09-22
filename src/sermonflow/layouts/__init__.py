@@ -40,6 +40,7 @@ from .base import (
     DrawOp as DrawOp,
     EmptyVerseError as EmptyVerseError,
     Placed as Placed,
+    PointOverflowError as PointOverflowError,
     SlideOverflowError as SlideOverflowError,
     _scrim_limit as _scrim_limit,
     fits as fits,

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterable, Sequence
+from datetime import datetime
 from functools import lru_cache
 
 from PIL import Image
@@ -30,6 +31,7 @@ from .layouts import (
     TEXT_BOX_WIDTH,
     EmptyVerseError,
     Placed,
+    PointOverflowError,
     SlideOverflowError,
     get_point_style,
     plan_verse,
@@ -78,6 +80,26 @@ def render(placed: Placed, output_path: str) -> str:
     """Compose a planned slide and write it to `output_path` as an RGBA TIFF."""
     compose(placed).save(output_path, "TIFF")
     return output_path
+
+
+def run_dir(output_dir: str) -> str:
+    """
+    A folder of this run's own inside `output_dir`: `<output_dir>/<stamp>`.
+
+    Renders write into one of these rather than straight into the folder they
+    were given, so a second run cannot overwrite the first, and a slide from an
+    earlier run cannot stand in for a verse this one skipped. A counter is
+    added if the stamp is taken -- two runs in the same second, or a rerun of
+    an old one. Not created here; render_deck makes it when it writes.
+    """
+    base = os.path.expanduser(output_dir)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    candidate = os.path.join(base, stamp)
+    attempt = 2
+    while os.path.exists(candidate):
+        candidate = os.path.join(base, f"{stamp}-{attempt}")
+        attempt += 1
+    return candidate
 
 
 def render_deck(slides: Sequence[Placed], output_dir: str = "./slides") -> list[str]:
@@ -187,10 +209,15 @@ def plan_points(
     the ones before it, so a blank entry left in place would leave a hole in
     the build.
     """
-    kept = [text for text in points if text.strip()]
+    kept = [(i, text) for i, text in enumerate(points, 1) if text.strip()]
     if not kept:
         raise EmptyVerseError("no renderable points")
-    return get_point_style(style).plan(kept, stem)
+    try:
+        return get_point_style(style).plan([text for _, text in kept], stem)
+    except PointOverflowError as exc:
+        # The planner numbered from what it was handed, which is the list
+        # without the blanks; say it again with the caller's position.
+        raise PointOverflowError(kept[exc.index - 1][0], exc.detail) from None
 
 
 def generate_points(

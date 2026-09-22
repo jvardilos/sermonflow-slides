@@ -72,6 +72,22 @@ class SlideOverflowError(ValueError):
     """Raised when content needs more room than the slide can give it."""
 
 
+class PointOverflowError(SlideOverflowError):
+    """
+    One point that will not fit, with its position in the deck it was planned in.
+
+    render.plan_points drops blank entries before planning, so the index a
+    planner counts is not the one the caller gave. Carrying the index and the
+    detail apart lets plan_points restate the message with the caller's own
+    numbering, instead of naming a point the caller never sent.
+    """
+
+    def __init__(self, index: int, detail: str) -> None:
+        super().__init__(f"point {index} {detail}")
+        self.index = index
+        self.detail = detail
+
+
 class EmptyVerseError(ValueError):
     """Raised when a slide has no renderable text. Batch renders skip these."""
 

@@ -102,6 +102,7 @@ from .layouts import (
     DrawOp as DrawOp,
     EmptyVerseError as EmptyVerseError,
     Placed as Placed,
+    PointOverflowError as PointOverflowError,
     PointStyle as PointStyle,
     SlideOverflowError as SlideOverflowError,
     UnknownPointStyleError as UnknownPointStyleError,
@@ -137,6 +138,7 @@ from .render import (
     plan_points as plan_points,
     render as render,
     render_deck as render_deck,
+    run_dir as run_dir,
     render_slide as render_slide,
     slide_filename as slide_filename,
 )

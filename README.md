@@ -85,6 +85,9 @@ the ESV.
   chapter is roughly 200 MB.
 - Files are named so they sort in order: `John_17_001.tif`, `John_17_002.tif`,
   and so on for Scripture, and `point_001.tif` onward for points.
+- Every run writes into its own timestamped folder inside the one you name
+  (`.../2026-09-22_101530/`), so re-running never overwrites an earlier deck or
+  leaves one of its slides sitting in this one.
 
 ### Limits
 

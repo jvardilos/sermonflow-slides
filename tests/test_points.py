@@ -247,6 +247,28 @@ class TestStackedGeometry:
         assert all(abs(ours - c) <= 26 for c in centres)
 
 
+class TestProblemNumbering:
+    """
+    Blank points are dropped before planning, so a planner's own numbering is
+    an index into what survived. The numbers a caller sees must be its own, or
+    the fix goes to the wrong point (#22).
+    """
+
+    @pytest.mark.parametrize("style", ["centered", "stacked"])
+    def test_an_overflow_names_the_callers_position(self, style):
+        from sermonflow.cli import validate_points
+
+        long_point = "word " * 400
+        problems = validate_points(["", "Fits.", long_point], style)
+        overflow = [p for p in problems if "px" in p or "lines" in p]
+        assert overflow and all("point 3" in p for p in overflow), problems
+
+    def test_planned_directly_the_numbering_is_the_planners_own(self):
+        # plan_centered sees only what it was handed, so point 1 is point 1.
+        with pytest.raises(slidegen.SlideOverflowError, match="point 1"):
+            slidegen.plan_centered(["word " * 400])
+
+
 class TestPointStyleRegistry:
     def test_both_styles_registered(self):
         assert set(slidegen.point_style_names()) == {"rolling", "centered", "stacked"}

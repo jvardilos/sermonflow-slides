@@ -49,6 +49,13 @@ project output location. Do not assume a Desktop path. SermonFlow creates the
 directory if necessary and writes uncompressed TIFFs, approximately 8 MB per
 slide. A chapter can therefore use hundreds of MB.
 
+Each call writes into its own timestamped subfolder of `output_dir`, so a
+re-run never overwrites an earlier deck. Report the `output_dir` from the
+result, not the one that was requested, since that is where the files are.
+
+If the result carries `skipped`, those verses or points never reached a slide:
+tell the user what is missing from the deck rather than reporting a clean run.
+
 ## Errors
 
 - Invalid or unavailable passage: show the provider or validation error and

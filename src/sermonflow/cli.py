@@ -41,7 +41,7 @@ from .providers import (
     get_provider,
     provider_names,
 )
-from .render import generate_points, generate_slides, plan_points
+from .render import generate_points, generate_slides, plan_points, run_dir
 from .text import Verse, find_artifacts, format_verses
 
 
@@ -216,6 +216,7 @@ def build(
             what="this passage",
         )
 
+    output_dir = run_dir(output_dir)
     paths = generate_slides(verses, output_dir=output_dir, formatted=True)
     print(f"Rendered {len(paths)} slides to {output_dir}")
     _report_skips(skipped)
@@ -346,6 +347,7 @@ def build_points(
         drops=bool(dropped),
         what="these points",
     )
+    output_dir = run_dir(output_dir)
     paths = generate_points(points, output_dir=output_dir, style=style)
     print(f"Rendered {len(paths)} {style} point slides to {output_dir}")
     _report_skips(dropped)

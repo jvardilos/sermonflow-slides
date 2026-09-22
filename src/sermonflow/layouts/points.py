@@ -52,6 +52,7 @@ from .base import (
     DrawOp,
     EmptyVerseError,
     Placed,
+    PointOverflowError,
     SlideOverflowError,
     fits,
     snap_top,
@@ -167,8 +168,8 @@ def plan_centered(points: Sequence[str], stem: str = "point") -> list[Placed]:
         height = block_height(len(lines))
         top = centered_top(len(lines))
         if not fits(top, height):
-            raise SlideOverflowError(
-                f"point {i} needs {len(lines)} lines, more than a slide holds"
+            raise PointOverflowError(
+                i, f"needs {len(lines)} lines, more than a slide holds"
             )
         slides.append(Placed(_ops(lines, top), _stem(stem, i)))
     return slides
@@ -238,10 +239,11 @@ def plan_stacked(points: Sequence[str], stem: str = "point") -> list[Placed]:
             raise EmptyVerseError(f"point {i} has no renderable text")
         tops, total = stacked_blocks(paragraphs)
         if not fits(tops[0], total):
-            raise SlideOverflowError(
-                f"point {i} stacks to {total}px, taller than the "
+            raise PointOverflowError(
+                i,
+                f"stacks to {total}px, taller than the "
                 f"{SLIDE_HEIGHT - MIN_BOTTOM_MARGIN}px safe area holds; "
-                f"split it across two slides"
+                f"split it across two slides",
             )
         ops: tuple[DrawOp, ...] = ()
         for lines, top in zip(paragraphs, tops):

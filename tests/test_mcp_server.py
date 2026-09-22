@@ -8,6 +8,8 @@ working directory is, so the paths it reports have to stand on their own.
 """
 
 import os
+import pathlib
+import re
 
 import pytest
 
@@ -69,13 +71,14 @@ class TestReportedPaths:
     def test_relative_output_dir_is_reported_absolute(self, tmp_path, monkeypatch):
         monkeypatch.chdir(tmp_path)
         result = mcp_server.generate_points(['One.'], output_dir='out')
-        assert result['output_dir'] == str(tmp_path / 'out')
+        # The run folder (#25) sits inside the folder the caller named.
+        assert pathlib.Path(result['output_dir']).parent == tmp_path / 'out'
         assert all(os.path.isabs(path) for path in result['paths'])
 
     def test_home_is_expanded(self, tmp_path, monkeypatch):
         monkeypatch.setenv('HOME', str(tmp_path))
         result = mcp_server.generate_points(['One.'], output_dir='~/deck')
-        assert result['output_dir'] == str(tmp_path / 'deck')
+        assert pathlib.Path(result['output_dir']).parent == tmp_path / 'deck'
         assert os.path.isfile(result['paths'][0])
 
 
@@ -334,3 +337,34 @@ class TestSkippedBlankVerse:
         assert result['rendered'] and result['count'] == 2
         assert result['skipped'] == ['Book 1:2 ESV']
         assert 'missing' in result['hint']
+
+
+class TestRunFolder:
+    """
+    Each render gets its own timestamped folder inside the one it was given,
+    so a second run cannot overwrite the first or leave a stale slide standing
+    in a deck (#25).
+    """
+
+    STAMP = re.compile(r'^\d{4}-\d{2}-\d{2}_\d{6}(-\d+)?$')
+
+    def test_paths_live_in_a_timestamped_subfolder(self, tmp_path):
+        result = mcp_server.generate_points(['One.'], output_dir=str(tmp_path))
+        run = pathlib.Path(result['output_dir'])
+        assert run.parent == tmp_path
+        assert self.STAMP.match(run.name)
+        # The reported folder is the one the files are in.
+        assert {pathlib.Path(p).parent for p in result['paths']} == {run}
+
+    def test_a_second_run_does_not_touch_the_first(self, tmp_path):
+        first = mcp_server.generate_points(['One.'], output_dir=str(tmp_path))
+        second = mcp_server.generate_points(['Two.'], output_dir=str(tmp_path))
+        assert first['output_dir'] != second['output_dir']
+        assert all(os.path.isfile(p) for p in first['paths'] + second['paths'])
+        # Nothing was written loose in the folder the caller named.
+        assert list(tmp_path.glob('*.tif')) == []
+
+    def test_a_passage_run_is_folded_the_same_way(self, provider, tmp_path):
+        result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path))
+        run = pathlib.Path(result['output_dir'])
+        assert run.parent == tmp_path and self.STAMP.match(run.name)
