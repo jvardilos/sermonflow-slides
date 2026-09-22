@@ -351,6 +351,27 @@ class TestKerning:
     def test_missing_font_yields_no_kerning(self):
         assert slidegen._load_kerning('/no/such/font.ttf', 0) is None
 
+    def test_faces_use_basic_layout_on_every_build(self, monkeypatch):
+        """
+        Hand-applied kerning assumes an engine that applies none itself. Raqm
+        does, and Linux Pillow wheels carry it, so the engine must be pinned
+        rather than left to whatever the running Pillow was built with.
+
+        Pillow defaults to Raqm whenever its build has it, so the test claims
+        that it does -- otherwise, on a build without Raqm, an unpinned face
+        would come out BASIC anyway and this could never fail.
+        """
+        from PIL import ImageFont
+
+        monkeypatch.setattr(ImageFont.core, 'HAVE_RAQM', True)
+        slidegen.load_face.cache_clear()
+        try:
+            for weight in slidegen.WEIGHTS:
+                font = slidegen.load_face(weight).font
+                assert font.layout_engine == ImageFont.Layout.BASIC, weight
+        finally:
+            slidegen.load_face.cache_clear()
+
     def test_only_the_bundled_font_is_a_choice(self):
         """
         The Helvetica-substitute-with-horizontal-condense path is gone: the
