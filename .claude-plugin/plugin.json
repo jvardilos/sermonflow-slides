@@ -1,13 +1,13 @@
 {
   "name": "sermonflow-slides",
-  "version": "0.2.0",
-  "description": "Generate ProPresenter-ready sermon slides from scripture verses or points with intelligent yellow-highlight extraction",
+  "version": "0.3.0",
+  "description": "Generate ProPresenter-ready sermon slides from Scripture references or supplied sermon points",
   "author": {
     "name": "Jacob Vardi",
     "email": "jacob.pixel7a@gmail.com"
   },
-  "homepage": "https://github.com/jvardi/sermonflow-mcp",
-  "repository": "https://github.com/jvardi/sermonflow-mcp/tree/plugin/distribute",
+  "homepage": "https://github.com/jvardilos/sermonflow-slides",
+  "repository": "https://github.com/jvardilos/sermonflow-slides",
   "license": "Proprietary",
   "keywords": ["bible", "slides", "propresenter", "sermon", "slides-generation"],
   "mcpServers": "./.mcp.json"

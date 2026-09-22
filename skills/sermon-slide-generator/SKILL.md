@@ -1,134 +1,59 @@
 ---
 name: sermon-slide-generator
-description: Generate ProPresenter slides from sermon documents or verse references—extracts yellow-highlighted verses and points, renders them with intelligent typography.
+description: Preview and generate ProPresenter-ready Scripture or sermon-point slides through SermonFlow's local MCP tools.
 ---
 
-# Sermon Slide Generation
+# Sermon slide generation
 
-When a user uploads a sermon document (Word or PDF) or asks to generate slides from scripture, use this workflow to extract highlighted content and render polished ProPresenter slides.
+Use SermonFlow for a Scripture reference or sermon-point text supplied by the
+user. It creates 1920×1080 RGBA TIFF slides suitable for ProPresenter import.
 
-## Triggers
+## Choose the correct tool
 
-- User uploads a `.docx` or `.pdf` file that appears to be a sermon
-- User asks: "generate slides for [verses]" or "give me Romans 8"
-- User mentions sermon points they want on slides
+- Scripture reference, such as `John 17` or `Romans 8:28`: use
+  `preview_slides`, then `generate_slides` after the preview is acceptable.
+- User-authored statements, headings, paraphrases, or sermon points: use
+  `preview_points`, then `generate_points` after the preview is acceptable.
+- If the requested point treatment is unclear, call `list_layouts` or ask the
+  user whether they want a rolling outline or a centered statement.
 
-## Workflow
+Do not claim that SermonFlow extracts highlights from Word or PDF files: the
+current MCP server accepts only Scripture references and supplied point text.
 
-### 1. Extract Content
+## Scripture workflow
 
-**If document uploaded:**
-Extract all yellow-highlighted text from the document:
-- Use `python-docx` (for .docx files) to read highlight color from text runs
-- Use `pdfplumber` or `pypdf` (for .pdf files) to extract text and attempt highlight detection
-- If extraction fails, fall back to asking user to paste or specify verses manually
+1. Call `preview_slides(reference, translation)`.
+2. Surface any validation problems or wrapped-line concerns to the user.
+3. Call `generate_slides(reference, translation, output_dir, strict=true)` only
+   after the user accepts the preview, or when their request clearly authorizes
+   generation without a preview.
+4. Report the returned file paths and output directory.
 
-**If natural language input:**
-Parse the verse reference using the `preview_slides` tool first to validate:
-- "Romans 8" → "Romans 8:1-39" (full chapter)
-- "John 3:16-20" → exact range
-- "1 Corinthians 13" → full chapter
+`translation` defaults to `ESV`. With `ESV_API_KEY`, retrieval uses the ESV
+API; otherwise BibleGateway is the fallback. The ESV API supports ESV only.
 
-### 2. Classify Content
+## Point workflow
 
-For each extracted highlight, determine if it's:
-- **Verse** (contains book name like "John", "Romans", "Matthew" + reference)
-  - Route to `generate_slides` tool
-- **Point** (sermon point text, typically a phrase or statement)
-  - Route to `generate_points` tool
+1. Choose a style: `rolling` for an outline that builds one point at a time,
+   `centered` for one statement per slide, or `stacked` for one slide per entry
+   holding the paragraphs that entry separates with newlines (a lie above its
+   truth, or a short list of steps). Call `list_layouts` if unsure.
+2. Call `preview_points(points, style)`.
+3. Call `generate_points(points, style, output_dir, strict=true)` when approved.
+4. Report the returned file paths and output directory.
 
-Use simple heuristics: if the text includes a book name + colon + number(s), treat as verse. Otherwise, treat as point.
+## Output handling
 
-### 3. Generate Slides
+Always pass an explicit `output_dir` chosen by the user or a host-appropriate
+project output location. Do not assume a Desktop path. SermonFlow creates the
+directory if necessary and writes uncompressed TIFFs, approximately 8 MB per
+slide. A chapter can therefore use hundreds of MB.
 
-**For verses:**
-```
-Call generate_slides(reference="[book chapter:verse-range]", translation="ESV")
-```
-Returns the paths to generated slide files. The tool handles:
-- Fetching scripture text
-- Wrapping text to fit ProPresenter bounds
-- Rendering with the configured typeface
+## Errors
 
-**For points:**
-```
-Call generate_points(points=["point 1 text", "point 2 text", ...], style="default")
-```
-Returns the paths to generated point slides. The tool:
-- Renders each point in the configured layout
-- Sizes text within the predefined bounds
-- Applies the sermon point styling
-
-### 4. Output Management
-
-Create an output directory on the user's Desktop:
-- Directory name: `sermonflow-slides-{timestamp}` or `sermonflow-{date}_{time}`
-- Move or copy all generated slides into this directory
-- Tell the user the full path to the directory
-
-## Extraction Details
-
-### Yellow Highlight Detection (DOCX)
-
-```python
-from docx import Document
-from docx.enum.text import WD_COLOR_INDEX
-
-doc = Document(file_path)
-highlights = []
-
-for paragraph in doc.paragraphs:
-    for run in paragraph.runs:
-        if run.font.highlight_color == WD_COLOR_INDEX.YELLOW:
-            highlights.append(run.text)
-```
-
-### Yellow Highlight Detection (PDF)
-
-For PDFs, highlight extraction is approximate:
-- Use `pdfplumber` to extract text and page structure
-- Attempt to detect highlight color from PDF annotations
-- If annotations not available, extract all text and ask user to manually confirm
-
-### Natural Language Verse Parsing
-
-Match patterns like:
-- `Genesis 1` → "Genesis 1"
-- `John 3:16` → "John 3:16"
-- `Romans 12:1-3` → "Romans 12:1-3"
-- `1 Thessalonians 4` → "1 Thessalonians 4"
-
-Use regex: `([1-3]?\s?)?([A-Za-z\s]+)\s+(\d+)(?::(\d+))?(?:-(\d+))?`
-
-## Error Handling
-
-If extraction fails:
-- "I couldn't extract highlights from the PDF. Try uploading a Word document, or paste the verses/points you want."
-
-If verse reference is invalid:
-- Let the `preview_slides` tool validate; it will report if the reference doesn't exist
-
-If no output directory can be created:
-- Fall back to saving in the current working directory or temp location
-- Tell the user the fallback path
-
-## Example Flow
-
-```
-User: [uploads sermon.docx]
-Claude: "I found 12 highlighted verses and 3 sermon points in your document. 
-         Generating slides..."
-
-→ Extract highlights: ["John 3:16", "Romans 12:1", ...] + ["Jesus is Lord", ...]
-→ Call generate_slides for each verse
-→ Call generate_points for each point
-→ Collect outputs into Desktop/sermonflow-slides-2026-09-20_14-32/
-→ "Done! Your slides are in Desktop/sermonflow-slides-2026-09-20_14-32/"
-```
-
-## Notes
-
-- Trust the sermonflow code to handle layout within its predefined bounds—no manual adjustment needed
-- As the code improves, the point style detection will get better; for now, render points literally as extracted
-- If a point text is too long, the code will wrap it; no pre-processing needed
-- Always save to Desktop by default, but respect if the user specifies a different output location
+- Invalid or unavailable passage: show the provider or validation error and
+  ask for a corrected reference.
+- Validation issue with `strict=true`: do not render until the user chooses to
+  shorten/edit the content or explicitly authorizes `strict=false`.
+- Write failure: report the attempted output directory and ask for another
+  writable location.

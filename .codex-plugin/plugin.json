@@ -1,0 +1,31 @@
+{
+  "name": "sermonflow-slides",
+  "version": "0.3.0",
+  "description": "Generate ProPresenter-ready Scripture and sermon-point slides through a local MCP server.",
+  "author": {
+    "name": "Jacob Vardi",
+    "email": "jacob.pixel7a@gmail.com",
+    "url": "https://github.com/jvardilos"
+  },
+  "homepage": "https://github.com/jvardilos/sermonflow-slides",
+  "repository": "https://github.com/jvardilos/sermonflow-slides",
+  "license": "Proprietary",
+  "keywords": ["bible", "sermon", "slides", "propresenter", "mcp"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "SermonFlow Slides",
+    "shortDescription": "Render Scripture and sermon slides for ProPresenter.",
+    "longDescription": "Creates 1920×1080 ProPresenter-ready TIFF slides from Scripture references or supplied sermon points using a local MCP server.",
+    "developerName": "Jacob Vardi",
+    "category": "Productivity",
+    "capabilities": ["Local MCP tools", "Write slide files"],
+    "websiteURL": "https://github.com/jvardilos/sermonflow-slides",
+    "defaultPrompt": [
+      "Preview John 17 before rendering slides.",
+      "Create rolling sermon-point slides for my outline.",
+      "Show the available SermonFlow point styles."
+    ],
+    "brandColor": "#1F2937"
+  }
+}
