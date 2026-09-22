@@ -119,3 +119,105 @@ def raggedness(lines: Sequence[str], measure: Measure) -> float:
         return 0.0
     mean = sum(widths) / len(widths)
     return math.sqrt(sum((w - mean) ** 2 for w in widths) / len(widths))
+
+
+# ============================================================================
+# Enhanced: Widow/orphan avoidance
+# ============================================================================
+
+
+def widow_penalty(lines: Sequence[str], widow_threshold: int = 4) -> float:
+    """
+    Penalize widow words (short words stranded at line ends).
+
+    A widow is a word at the end of a line (excluding final line) that is
+    shorter than widow_threshold characters. Returns a penalty score: 0 if no
+    widows, higher if there are many.
+    """
+    penalty = 0.0
+    for line in lines[:-1]:  # exclude final line, which is expected to be short
+        words = line.split()
+        if words:
+            last_word = words[-1].rstrip(".,;:!?\"'")
+            # Penalize short words; shorter ones get worse penalty
+            if len(last_word) < widow_threshold:
+                penalty += 50.0 / (len(last_word) + 1)
+    return penalty
+
+
+def widow_aware_wrap(
+    text: str,
+    measure: Measure,
+    max_width: float,
+    widow_threshold: int = 4,
+) -> list[str]:
+    """
+    Balance wrap + widow avoidance penalty.
+
+    Same as balance_wrap but penalizes breaking that leaves short words
+    stranded at line ends. The binary search now optimizes for a combined score
+    of raggedness + widow penalty, rather than width alone.
+
+    Args:
+        text: the text to wrap
+        measure: width function
+        max_width: maximum line width
+        widow_threshold: words < this many characters are considered widows
+
+    Returns wrapped lines with widow avoidance applied.
+    """
+    baseline = greedy_wrap(text, measure, max_width)
+    if len(baseline) <= 1:
+        return baseline
+
+    floor = max(math.ceil(measure(ch)) for ch in text if not ch.isspace())
+    low, high = max(1, floor), int(max_width)
+    best = baseline
+    best_score = raggedness(baseline, measure) + widow_penalty(
+        baseline, widow_threshold
+    )
+
+    while low <= high:
+        mid = (low + high) // 2
+        candidate = greedy_wrap(text, measure, mid)
+        if len(candidate) <= len(baseline):
+            score = raggedness(candidate, measure) + widow_penalty(
+                candidate, widow_threshold
+            )
+            if score < best_score:
+                best = candidate
+                best_score = score
+            high = mid - 1
+        else:
+            low = mid + 1
+    return best
+
+
+def composite_score(
+    lines: Sequence[str],
+    measure: Measure,
+    widow_weight: float = 1.0,
+    raggedness_weight: float = 1.0,
+) -> dict[str, float]:
+    """
+    Comprehensive scoring: raggedness + widow penalty with weights.
+
+    Returns a dict with breakdowns so designers can see trade-offs.
+    Lower total score is better (more balanced, fewer widows).
+
+    Args:
+        lines: wrapped lines
+        measure: width function
+        widow_weight: multiplier for widow penalty
+        raggedness_weight: multiplier for width variance
+
+    Returns dict with 'total', 'raggedness', and 'widow_penalty' keys.
+    """
+    rag = raggedness(lines, measure)
+    widow = widow_penalty(lines)
+    total = (rag * raggedness_weight) + (widow * widow_weight)
+    return {
+        "total": total,
+        "raggedness": rag,
+        "widow_penalty": widow,
+    }

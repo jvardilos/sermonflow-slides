@@ -48,10 +48,15 @@ from .base import (
 from .points import (
     POINT_BOX_WIDTH as POINT_BOX_WIDTH,
     ROLLING_STEP as ROLLING_STEP,
+    STACK_BOX_WIDTH as STACK_BOX_WIDTH,
+    STACK_CENTER as STACK_CENTER,
+    STACK_LEFT_MARGIN as STACK_LEFT_MARGIN,
     centered_top as centered_top,
     plan_centered as plan_centered,
     plan_rolling as plan_rolling,
+    plan_stacked as plan_stacked,
     rolling_tops as rolling_tops,
+    stacked_blocks as stacked_blocks,
     wrap_point as wrap_point,
 )
 from .verse import (
@@ -98,6 +103,14 @@ POINT_STYLES: dict[str, PointStyle] = {
         "one statement per slide, its block centered and sitting a little "
         "above the middle of the canvas",
         plan_centered,
+    ),
+    "stacked": PointStyle(
+        "stacked",
+        "one standalone slide per entry, centered, holding every paragraph the "
+        "entry separates with a newline -- a lie above its truth, or a list of "
+        "steps. Nothing builds up between slides. This is the shape of the "
+        "hand-made Run week 2 deck",
+        plan_stacked,
     ),
 }
 
