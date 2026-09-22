@@ -130,10 +130,13 @@ def plan_rolling(points: Sequence[str], stem: str = "point") -> list[Placed]:
     if wrapped:
         bottom = tops[-1] + block_height(len(wrapped[-1]))
         if not fits(tops[0], bottom - tops[0]):
+            # No count: plan_points strips blank entries first, so counting
+            # what arrived here would not match what the caller sent, and the
+            # overflow is the whole list's, not one point's.
             raise SlideOverflowError(
-                f"{len(points)} points reach {bottom}px, past the "
+                f"the list reaches {bottom}px, past the "
                 f"{SLIDE_HEIGHT - MIN_BOTTOM_MARGIN}px safe area; "
-                f"shorten them or split the list across two decks"
+                f"shorten the points or split the list across two decks"
             )
 
     # Each slide is the previous one plus the next point.

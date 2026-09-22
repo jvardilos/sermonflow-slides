@@ -80,12 +80,21 @@ class PointOverflowError(SlideOverflowError):
     planner counts is not the one the caller gave. Carrying the index and the
     detail apart lets plan_points restate the message with the caller's own
     numbering, instead of naming a point the caller never sent.
+
+    So `index` counts the list its raiser was handed: planner-local when a
+    planner raises it, and the caller's own position once plan_points has
+    restated it. Catch it around plan_points to get the caller's numbering.
     """
 
     def __init__(self, index: int, detail: str) -> None:
-        super().__init__(f"point {index} {detail}")
+        # Both arguments go to super(), so copy and pickle can rebuild it:
+        # BaseException replays `args` through __init__.
+        super().__init__(index, detail)
         self.index = index
         self.detail = detail
+
+    def __str__(self) -> str:
+        return f"point {self.index} {self.detail}"
 
 
 class EmptyVerseError(ValueError):

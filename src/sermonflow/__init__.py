@@ -138,8 +138,8 @@ from .render import (
     plan_points as plan_points,
     render as render,
     render_deck as render_deck,
-    run_dir as run_dir,
     render_slide as render_slide,
+    reserve_run_dir as reserve_run_dir,
     slide_filename as slide_filename,
 )
 

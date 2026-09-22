@@ -15,6 +15,7 @@ passage also skips a verse too long for any slide.
 
 from __future__ import annotations
 
+import errno
 import os
 from collections.abc import Iterable, Sequence
 from datetime import datetime
@@ -82,9 +83,9 @@ def render(placed: Placed, output_path: str) -> str:
     return output_path
 
 
-def run_dir(output_dir: str) -> str:
+def reserve_run_dir(output_dir: str) -> str:
     """
-    A folder of this run's own inside `output_dir`: `<output_dir>/<stamp>`.
+    Create and return a folder of this run's own: `<output_dir>/<stamp>`.
 
     Renders write into one of these rather than straight into the folder they
     were given, so a second run cannot overwrite the first, and a slide from an
@@ -100,14 +101,18 @@ def run_dir(output_dir: str) -> str:
     os.makedirs(base, exist_ok=True)
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
     for attempt in range(1, 100):
-        name = stamp if attempt == 1 else f"{stamp}-{attempt}"
+        # Padded, so a folder that collided still sorts after the one it
+        # followed rather than between -1 and -2.
+        name = stamp if attempt == 1 else f"{stamp}-{attempt:02d}"
         candidate = os.path.join(base, name)
         try:
             os.mkdir(candidate)
         except FileExistsError:
             continue
         return candidate
-    raise FileExistsError(f"no free run folder for {stamp} in {base}")
+    raise FileExistsError(
+        errno.EEXIST, f"no free run folder for {stamp}", base
+    )
 
 
 def render_deck(slides: Sequence[Placed], output_dir: str = "./slides") -> list[str]:
@@ -217,15 +222,20 @@ def plan_points(
     the ones before it, so a blank entry left in place would leave a hole in
     the build.
     """
-    kept = [(i, text) for i, text in enumerate(points, 1) if text.strip()]
+    kept = [text for text in points if text.strip()]
+    positions = [i for i, text in enumerate(points, 1) if text.strip()]
     if not kept:
         raise EmptyVerseError("no renderable points")
     try:
-        return get_point_style(style).plan([text for _, text in kept], stem)
+        return get_point_style(style).plan(kept, stem)
     except PointOverflowError as exc:
         # The planner numbered from what it was handed, which is the list
-        # without the blanks; say it again with the caller's position.
-        raise PointOverflowError(kept[exc.index - 1][0], exc.detail) from None
+        # without the blanks; say it again with the caller's position. An
+        # index outside that list is not the caller's to read, so pass it
+        # through rather than naming a point they never sent.
+        if not 1 <= exc.index <= len(positions):
+            raise
+        raise PointOverflowError(positions[exc.index - 1], exc.detail) from exc
 
 
 def generate_points(

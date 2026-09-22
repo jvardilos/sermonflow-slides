@@ -53,7 +53,7 @@ from .providers import DEFAULT_TRANSLATION
 from .render import (
     generate_points as _render_points,
     generate_slides as _render_slides,
-    run_dir,
+    reserve_run_dir,
 )
 
 mcp = MCPServer("sermonflow-slides", version=__version__)
@@ -197,7 +197,7 @@ def generate_slides(
     # stdio is the protocol stream.
     # A folder of this run's own, so nothing here overwrites an earlier deck
     # or leaves one of its slides standing in for a verse this run skipped.
-    output_dir = run_dir(_resolve_dir(output_dir))
+    output_dir = reserve_run_dir(_resolve_dir(output_dir))
     paths = _render_slides(verses, output_dir=output_dir, formatted=True)
     result: dict[str, Any] = {
         "reference": reference,
@@ -332,7 +332,7 @@ def generate_points(
         }
 
     # As in generate_slides: the renderer directly, so nothing reaches stdout.
-    output_dir = run_dir(_resolve_dir(output_dir))
+    output_dir = reserve_run_dir(_resolve_dir(output_dir))
     paths = _render_points(points, output_dir=output_dir, style=style)
     result: dict[str, Any] = {
         "style": style,

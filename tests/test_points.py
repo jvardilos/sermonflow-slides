@@ -254,6 +254,15 @@ class TestProblemNumbering:
     the fix goes to the wrong point (#22).
     """
 
+    def test_rolling_does_not_count_the_points_it_was_handed(self):
+        # The deck overflows as a whole, so the message names no point -- but
+        # it must not report a count that excludes the caller's blanks either.
+        from sermonflow.cli import validate_points
+
+        problems = validate_points(["", *[f"Point number {i}." for i in range(12)]])
+        overflow = [p for p in problems if "safe area" in p]
+        assert overflow and "12 points" not in overflow[0], problems
+
     @pytest.mark.parametrize("style", ["centered", "stacked"])
     def test_an_overflow_names_the_callers_position(self, style):
         from sermonflow.cli import validate_points
@@ -267,6 +276,34 @@ class TestProblemNumbering:
         # plan_centered sees only what it was handed, so point 1 is point 1.
         with pytest.raises(slidegen.SlideOverflowError, match="point 1"):
             slidegen.plan_centered(["word " * 400])
+
+
+class TestPointOverflowError:
+    def test_it_survives_a_round_trip(self):
+        # Anything that serialises exceptions -- a process pool, a future, a
+        # transport that round-trips errors -- must not turn the message into
+        # a TypeError.
+        import copy
+        import pickle
+
+        error = slidegen.PointOverflowError(3, "needs 5 lines, more than a slide holds")
+        assert str(copy.copy(error)) == str(error)
+        assert str(pickle.loads(pickle.dumps(error))) == str(error)
+
+    def test_an_index_a_planner_should_not_have_sent_is_left_alone(self):
+        # A third-party style raising 0-based, or naming a slide rather than an
+        # input, must not make plan_points name a point the caller never sent.
+        def broken(points, stem):
+            raise slidegen.PointOverflowError(0, "broke")
+
+        style = slidegen.PointStyle("broken", "a style with an off-by-one", broken)
+        slidegen.POINT_STYLES["broken"] = style
+        try:
+            with pytest.raises(slidegen.PointOverflowError) as exc:
+                slidegen.plan_points(["", "One."], "broken")
+            assert exc.value.index == 0
+        finally:
+            del slidegen.POINT_STYLES["broken"]
 
 
 class TestPointStyleRegistry:

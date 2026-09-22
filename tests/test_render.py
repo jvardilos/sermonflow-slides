@@ -12,7 +12,9 @@ all the failing lengths at once is more useful than the first one.
 trusting the layout: the test is what landed on the canvas.
 """
 
+import datetime
 import os
+import sys
 
 import numpy as np
 import pytest
@@ -527,3 +529,33 @@ class TestReferenceWeight:
 
         widest = slidegen.text_measurer(face)('Song of Solomon 8:14 ESV')
         assert widest <= slidegen.REF_MAX_WIDTH, f'{weight}: {widest:.0f}px'
+
+
+class TestRunFolder:
+    """
+    Each render gets a folder of its own (#25), reserved rather than merely
+    checked, so two runs cannot write the same filenames.
+    """
+
+    def test_the_folder_is_created_and_reserved(self, tmp_path):
+        first = slidegen.reserve_run_dir(str(tmp_path))
+        second = slidegen.reserve_run_dir(str(tmp_path))
+        assert os.path.isdir(first) and os.path.isdir(second)
+        assert first != second
+
+    def test_a_collision_takes_the_next_padded_suffix(self, tmp_path, monkeypatch):
+        # Pin the stamp so the collision branch is the one under test, not a
+        # second boundary the two calls happened to straddle. The module comes
+        # from sys.modules because `sermonflow.render` as an attribute is the
+        # re-exported render() function, not the module (see #15).
+        class FrozenClock:
+            @staticmethod
+            def now():
+                return datetime.datetime(2026, 9, 22, 10, 15, 30)
+
+        monkeypatch.setattr(sys.modules['sermonflow.render'], 'datetime', FrozenClock)
+        first = slidegen.reserve_run_dir(str(tmp_path))
+        second = slidegen.reserve_run_dir(str(tmp_path))
+        assert os.path.basename(first) == '2026-09-22_101530'
+        # Padded, so the folders sort in run order past nine collisions.
+        assert os.path.basename(second) == '2026-09-22_101530-02'

@@ -180,6 +180,14 @@ class TestRunFolder:
         assert os.path.dirname(run) == str(tmp_path)
         assert run in capsys.readouterr().out
 
+    def test_a_passage_render_uses_one_too(self, tmp_path):
+        # The stale-slide case is a verse case: a re-render that skips verse 2
+        # must not leave the earlier run's slide standing in for it.
+        provider = serving(('The first verse fits.', 'Book 1:1 ESV'))
+        paths = build('Book 1', output_dir=str(tmp_path), provider=provider)
+        assert os.path.dirname(os.path.dirname(paths[0])) == str(tmp_path)
+        assert list(tmp_path.glob('*.tif')) == []
+
     def test_an_earlier_deck_in_the_folder_is_left_alone(self, tmp_path):
         stale = tmp_path / 'point_001.tif'
         stale.write_bytes(b'old deck')

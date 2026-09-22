@@ -87,7 +87,9 @@ the ESV.
   and so on for Scripture, and `point_001.tif` onward for points.
 - Every run writes into its own timestamped folder inside the one you name
   (`.../2026-09-22_101530/`), so re-running never overwrites an earlier deck or
-  leaves one of its slides sitting in this one.
+  leaves one of its slides sitting in this one. Nothing is deleted, so the
+  folders add up: at roughly 200 MB a chapter, clear out the ones you no longer
+  need.
 
 ### Limits
 
