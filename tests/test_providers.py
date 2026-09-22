@@ -182,7 +182,7 @@ class TestRegistry:
             get_provider("some-nonsense")
 
     def test_provider_names_lists_the_canonical_backends(self):
-        from sermonflow.providers import provider_names
+        from sermonflow import provider_names
 
         assert provider_names() == ["esv-api", "bible-gateway"]
 

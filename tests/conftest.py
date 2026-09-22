@@ -122,6 +122,14 @@ TOO_MANY_POINTS = [f'Point number {i}.' for i in range(12)]
 #: still draws, which is what makes it the override case for strict=false.
 GREEK = 'Grace, χάρις, is a gift.'
 
+#: For tests that rely on GREEK being flagged. Only the bundled face, inspected
+#: with fontTools, is known to lack Greek, so skip anywhere it isn't flagged --
+#: as the glyph-coverage tests in test_edge_cases do.
+needs_greek_flagged = pytest.mark.skipif(
+    not slidegen.find_unrenderable(GREEK),
+    reason='font in use draws Greek, or its charset cannot be inspected',
+)
+
 
 class CountingProvider:
     """A BibleProvider that serves a fixed passage and counts its fetches."""

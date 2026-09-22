@@ -66,8 +66,7 @@ _POINTS_BLOCKED_HINT = (
 )
 _PASSAGE_BLOCKED_HINT = (
     "this passage cannot be laid out on these slides as it stands, and "
-    "changing strict will not help; tell the user which verses the problems "
-    "name"
+    "changing strict will not help; tell the user what the problems say"
 )
 
 
@@ -109,7 +108,8 @@ def preview_slides(
     ]
     return {
         "reference": reference,
-        "verse_count": len(slides),
+        # Every verse with text, including any left out of `slides` above.
+        "verse_count": sum(1 for text, _ in verses if text.strip()),
         "slides": slides,
         "problems": problems,
     }

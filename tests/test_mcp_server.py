@@ -11,7 +11,14 @@ import os
 
 import pytest
 
-from conftest import GREEK, OVERFLOW_WORDS, TOO_MANY_POINTS, CountingProvider, dummy_text
+from conftest import (
+    GREEK,
+    OVERFLOW_WORDS,
+    TOO_MANY_POINTS,
+    CountingProvider,
+    dummy_text,
+    needs_greek_flagged,
+)
 from sermonflow import cli, mcp_server
 
 PASSAGE = [
@@ -90,6 +97,7 @@ class TestStrictHint:
         assert 'strict=false' not in result['hint']
         assert os.listdir(tmp_path) == []
 
+    @needs_greek_flagged
     def test_strict_false_hint_for_points_that_would_render(self, tmp_path):
         result = mcp_server.generate_points([GREEK], output_dir=str(tmp_path))
         assert not result['rendered']
@@ -122,6 +130,7 @@ class TestStrictHint:
         result = mcp_server.generate_points(['  ', ''], style='sideways', output_dir=str(tmp_path))
         assert any('sideways' in problem for problem in result['problems'])
 
+    @needs_greek_flagged
     def test_strict_false_hint_for_a_passage_that_would_render(self, monkeypatch, tmp_path):
         serve(monkeypatch, [(GREEK, 'Book 1:1 ESV')])
         result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path))
@@ -169,3 +178,5 @@ class TestPreviewSlides:
         assert [slide['reference'] for slide in result['slides']] == [
             'Book 1:1 ESV', 'Book 1:3 ESV'
         ]
+        # The chapter still has three verses; only the previews skip one.
+        assert result['verse_count'] == 3

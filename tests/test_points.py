@@ -267,9 +267,7 @@ class TestPointStyleRegistry:
 
     def test_unknown_style_has_its_own_error(self):
         # Callers tell "no such style" apart from other planning errors by type.
-        from sermonflow.layouts import UnknownPointStyleError
-
-        with pytest.raises(UnknownPointStyleError):
+        with pytest.raises(slidegen.UnknownPointStyleError):
             slidegen.get_point_style("sideways")
 
     def test_lookup_returns_the_planner(self):

@@ -11,8 +11,16 @@ import os
 
 import pytest
 
-from conftest import GREEK, OVERFLOW_WORDS, TOO_MANY_POINTS, CountingProvider, dummy_text
-from sermonflow.cli import build, build_points
+from conftest import (
+    GREEK,
+    OVERFLOW_WORDS,
+    TOO_MANY_POINTS,
+    CountingProvider,
+    dummy_text,
+    needs_greek_flagged,
+)
+from sermonflow import cli
+from sermonflow.cli import build, build_points, validate_points
 
 
 def serving(*verses):
@@ -44,6 +52,7 @@ class TestContentThatCannotBeLaidOut:
         assert os.listdir(tmp_path) == []
 
 
+@needs_greek_flagged
 class TestNoStrictStillRenders:
     """The other side: a problem the renderer can draw past is overridable."""
 
@@ -69,7 +78,27 @@ class TestDryRun:
             (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
             ('The third verse fits.', 'Book 1:3 ESV'),
         )
-        assert build('Book 1', dry_run=True, provider=provider) == []
+        # Exits non-zero, as a points dry run does, so `-n && render` stops --
+        # but only after previewing the verses that fit.
+        with pytest.raises(SystemExit) as exc:
+            build('Book 1', dry_run=True, provider=provider)
+        assert exc.value.code not in (None, 0)
         captured = capsys.readouterr()
         assert 'Book 1:1 ESV' in captured.out and 'Book 1:3 ESV' in captured.out
         assert 'Book 1:2 ESV' in captured.err
+
+    def test_a_passage_with_no_verses_exits_non_zero(self):
+        with pytest.raises(SystemExit) as exc:
+            build('Book 1', dry_run=True, provider=serving())
+        assert exc.value.code not in (None, 0)
+
+
+class TestValidatePoints:
+    def test_an_unexpected_planning_error_is_reported_not_raised(self, monkeypatch):
+        # Validation's job is to report; a ValueError nobody anticipated still
+        # comes back as a problem rather than a crash.
+        def broken(points, style):
+            raise ValueError('boom')
+
+        monkeypatch.setattr(cli, 'plan_points', broken)
+        assert validate_points(['One.']) == ['boom']

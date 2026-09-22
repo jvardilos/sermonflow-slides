@@ -188,6 +188,10 @@ def build(
             print(f"\n{ref}  ({len(lines)} lines)")
             for line in lines:
                 print(f"    {line}")
+        # Then exit non-zero, as a points dry run does, so `-n && render`
+        # stops here. A clean passage fits: validate() laid it all out.
+        if problems and not passage_fits(verses):
+            raise SystemExit("cannot lay this passage out; see the problems above")
         return []
 
     paths = generate_slides(verses, output_dir=output_dir, formatted=True)
@@ -226,7 +230,10 @@ def validate_points(
             get_point_style(style)
         except UnknownPointStyleError as exc:
             problems.append(str(exc))
-    except (SlideOverflowError, UnknownPointStyleError) as exc:
+    except ValueError as exc:
+        # Overflow and an unknown style, but deliberately any ValueError:
+        # validation reports, so even an unforeseen one comes back as a
+        # problem rather than a crash. points_fit stays narrow instead.
         problems.append(str(exc))
     return problems
 
