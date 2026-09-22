@@ -5,10 +5,10 @@
   "author": {
     "name": "Jacob Vardi",
     "email": "jacob.pixel7a@gmail.com",
-    "url": "https://github.com/jvardi"
+    "url": "https://github.com/jvardilos"
   },
-  "homepage": "https://github.com/jvardi/sermonflow-mcp",
-  "repository": "https://github.com/jvardi/sermonflow-mcp",
+  "homepage": "https://github.com/jvardilos/sermonflow-slides",
+  "repository": "https://github.com/jvardilos/sermonflow-slides",
   "license": "Proprietary",
   "keywords": ["bible", "sermon", "slides", "propresenter", "mcp"],
   "skills": "./skills/",
@@ -20,7 +20,7 @@
     "developerName": "Jacob Vardi",
     "category": "Productivity",
     "capabilities": ["Local MCP tools", "Write slide files"],
-    "websiteURL": "https://github.com/jvardi/sermonflow-mcp",
+    "websiteURL": "https://github.com/jvardilos/sermonflow-slides",
     "defaultPrompt": [
       "Preview John 17 before rendering slides.",
       "Create rolling sermon-point slides for my outline.",

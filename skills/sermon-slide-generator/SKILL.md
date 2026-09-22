@@ -34,8 +34,10 @@ API; otherwise BibleGateway is the fallback. The ESV API supports ESV only.
 
 ## Point workflow
 
-1. Choose `rolling` for an outline that builds one point at a time, or
-   `centered` for one statement per slide.
+1. Choose a style: `rolling` for an outline that builds one point at a time,
+   `centered` for one statement per slide, or `stacked` for one slide per entry
+   holding the paragraphs that entry separates with newlines (a lie above its
+   truth, or a short list of steps). Call `list_layouts` if unsure.
 2. Call `preview_points(points, style)`.
 3. Call `generate_points(points, style, output_dir, strict=true)` when approved.
 4. Report the returned file paths and output directory.

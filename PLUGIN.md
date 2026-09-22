@@ -7,7 +7,8 @@ it can be connected to any compatible LLM host.
 ## What it does
 
 - Fetches a Scripture passage by reference and creates one TIFF slide per verse
-- Creates rolling outline or centered-statement slides from sermon points
+- Creates sermon-point slides in three styles: a rolling outline, a centered
+  statement, or stacked paragraphs on one slide
 - Previews wrapping and validation results before writing slide files
 - Uses the ESV API when `ESV_API_KEY` is configured, with BibleGateway as a
   zero-configuration fallback

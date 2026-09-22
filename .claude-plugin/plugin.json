@@ -6,8 +6,8 @@
     "name": "Jacob Vardi",
     "email": "jacob.pixel7a@gmail.com"
   },
-  "homepage": "https://github.com/jvardi/sermonflow-mcp",
-  "repository": "https://github.com/jvardi/sermonflow-mcp/tree/plugin/distribute",
+  "homepage": "https://github.com/jvardilos/sermonflow-slides",
+  "repository": "https://github.com/jvardilos/sermonflow-slides",
   "license": "Proprietary",
   "keywords": ["bible", "slides", "propresenter", "sermon", "slides-generation"],
   "mcpServers": "./.mcp.json"
