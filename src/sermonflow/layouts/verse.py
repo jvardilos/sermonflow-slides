@@ -16,7 +16,14 @@ from __future__ import annotations
 
 import re
 
-from ..fonts import FreeTypeFont, Face, load_fonts, text_measurer
+from ..fonts import (
+    REFERENCE_WEIGHT,
+    VERSE_WEIGHT,
+    Face,
+    FreeTypeFont,
+    load_fonts,
+    text_measurer,
+)
 from ..wrap import balance_wrap
 from .base import (
     CAP_HEIGHT,
@@ -31,9 +38,9 @@ from .base import (
     snap_top,
 )
 
-#: Weight keys (see fonts.WEIGHTS) the verse deck is set in.
-VERSE_WEIGHT = "roman"
-REFERENCE_WEIGHT = "medium"
+#: VERSE_WEIGHT and REFERENCE_WEIGHT come from fonts rather than being restated
+#: here: load_fonts measures with fonts' values, so a second copy could let the
+#: reference line be measured in one weight and drawn in another.
 
 TEXT_BOX_WIDTH = 678          # fitted against the reference deck's line counts
                               # in post-scale space: 24/26 verses match, and the
