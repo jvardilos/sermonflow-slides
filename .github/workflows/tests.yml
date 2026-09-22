@@ -1,0 +1,27 @@
+name: tests
+# Push as well as pull_request -- this repo commits straight to feature
+# branches, so a pull_request-only trigger would never fire.
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  pytest:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.14'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: pytest
+        # No font install needed: font/NeueHaasDisplay*.ttf is tracked in this
+        # repo, so rendering tests run against the real face in CI.
+        # Unpiped on purpose -- a pipe would mask the exit code.
+        run: python -m pytest -q
