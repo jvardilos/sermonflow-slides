@@ -1,0 +1,44 @@
+{
+  // F5 / Run-and-Debug configurations. These use the interpreter selected in
+  // settings.json (the ./deps venv). "build" and "test" as one-shot commands
+  // live in tasks.json (Run Task / Ctrl+Shift+B); the test config below is the
+  // debuggable version of the pytest task.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "sermonflow: dry-run John 17",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "sermonflow.cli",
+      "args": ["John 17", "--dry-run"],
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "sermonflow-mcp: server (stdio)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "sermonflow.mcp_server",
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "test: pytest (all)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["tests", "-q"],
+      "console": "integratedTerminal",
+      "justMyCode": false
+    },
+    {
+      "name": "test: pytest (current file)",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["${file}", "-q"],
+      "console": "integratedTerminal",
+      "justMyCode": false
+    }
+  ]
+}

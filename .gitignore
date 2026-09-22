@@ -1,7 +1,10 @@
 __pycache__
 .pytest_cache
-.vscode
 deps
 slides
 *.tif
 *.psd
+
+# packaging / build artifacts
+build/
+dist/

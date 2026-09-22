@@ -1,0 +1,37 @@
+{
+  // Build and test commands. Ctrl+Shift+B runs the default build; Terminal >
+  // Run Task lists the rest. All run against the ./deps venv.
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build: editable install",
+      "detail": "pip install -e '.[dev]' — rebuild after changing deps in pyproject.toml",
+      "type": "shell",
+      "command": "${workspaceFolder}/deps/bin/python -m pip install -e '.[dev]'",
+      "group": { "kind": "build", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "test: pytest",
+      "detail": "run the full test suite",
+      "type": "shell",
+      "command": "${workspaceFolder}/deps/bin/python -m pytest tests -q",
+      "group": { "kind": "test", "isDefault": true },
+      "problemMatcher": []
+    },
+    {
+      "label": "typecheck: pyright",
+      "detail": "strict type check of src/sermonflow",
+      "type": "shell",
+      "command": "${workspaceFolder}/deps/bin/pyright",
+      "problemMatcher": []
+    },
+    {
+      "label": "build: wheel + sdist",
+      "detail": "produce a distributable wheel in dist/",
+      "type": "shell",
+      "command": "${workspaceFolder}/deps/bin/python -m pip wheel . --no-deps -w dist",
+      "problemMatcher": []
+    }
+  ]
+}

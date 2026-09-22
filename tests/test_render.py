@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-import slidegen
+import sermonflow as slidegen
 from conftest import MAX_FITTING_WORDS, OVERFLOW_WORDS, dummy_text
 
 #: One line up to the 12-line ceiling, at ~5 words per line.
@@ -351,23 +351,18 @@ class TestKerning:
     def test_missing_font_yields_no_kerning(self):
         assert slidegen._load_kerning('/no/such/font.ttf', 0) is None
 
-    def test_kerning_is_ignored_for_the_substitute(self):
-        """Helvetica Neue carries only a legacy 'kern' table, which is
-        deliberately not read -- its scale was fitted without it."""
-        # Located BY NAME, not by position. This read FONT_CHOICES[1] until a
-        # repo-local Neue Haas candidate was inserted ahead of Helvetica, at
-        # which point index 1 named a face that DOES carry GPOS kerning -- so
-        # the assertion below ran against the wrong font and went red without
-        # the behaviour it pins having changed at all.
-        substitute = next(
-            (c for c in slidegen.FONT_CHOICES if c[0].startswith('Helvetica')),
-            None,
-        )
-        assert substitute is not None, 'no Helvetica substitute candidate'
-        path, index = substitute[1]
-        if not os.path.exists(path):
-            pytest.skip('Helvetica Neue not present')
-        assert slidegen._load_kerning(path, index) is None
+    def test_only_the_bundled_font_is_a_choice(self):
+        """
+        The Helvetica-substitute-with-horizontal-condense path is gone: the
+        real typeface is now bundled and always resolves, so there is exactly
+        one font choice and it is the reference font. This used to assert that
+        the substitute's legacy 'kern' table was deliberately not read; with no
+        substitute left, the invariant is simply that there is nothing else to
+        choose.
+        """
+        assert len(slidegen.FONT_CHOICES) == 1
+        assert slidegen.IS_REFERENCE_FONT
+        assert slidegen.HORIZONTAL_SCALE == 1.0
 
     def test_kern_width_is_zero_without_kerning_data(self):
         assert slidegen.kern_width('AVATAR', None) == 0.0
@@ -420,14 +415,46 @@ class TestKerning:
 
             assert np.array_equal(np.array(native), np.array(ours)), text
 
-    def test_measured_width_matches_what_is_drawn(self):
-        """Measurement and rendering must agree, or wrapping is fiction."""
+    def test_rendered_ink_matches_the_wrap_metric(self):
+        """
+        Measurement and rendering must agree, or wrapping is fiction.
+
+        The number to check against is ``text_measurer`` -- the metric the wrap
+        functions and TEXT_BOX_WIDTH are both stated in. If the ink that lands
+        on the slide is that wide, then a line that measured as fitting fits.
+
+        This deliberately does *not* compare against Pillow's ``textlength``,
+        which is not one number: on a Pillow built with Raqm (HarfBuzz) it is
+        already shaped and kerned, and on a build without Raqm it is the bare
+        sum of advance widths. The renderer applies GPOS kerning either way --
+        that is what matches the reference deck -- so on a non-Raqm build the
+        rendered ink is legitimately narrower than ``textlength`` by the whole
+        kerning delta (~30px on this string). Asserting against ``textlength``
+        made this a Raqm detector rather than a fidelity check.
+        """
         verse, _ = slidegen.load_fonts()
         text = 'AVATAR, Yesterday we saw'
-        predicted = slidegen.text_measurer(verse)(text)
+        measured = slidegen.text_measurer(verse)(text)
         img = slidegen.compose_slide(text, 'Book 1:1 ESV', max_width=10_000)
         left, right, _, _ = ink_bounds(img)
-        assert abs((right - left) - predicted) <= 4
+        assert abs((right - left) - measured) <= 4
+
+    def test_wrap_metric_never_exceeds_what_pil_will_lay_out(self):
+        """
+        The no-overflow guarantee, and it holds on either Pillow build.
+
+        Kerning only ever tightens, so the measured width is at most Pillow's
+        own layout width. A line can therefore break early but can never run
+        past the box -- which is the property the box-bound tests rely on.
+        """
+        from PIL import Image, ImageDraw
+
+        verse, _ = slidegen.load_fonts()
+        scratch = ImageDraw.Draw(Image.new('RGBA', (1, 1)))
+        for text in ('AVATAR, Yesterday we saw', 'When Jesus had spoken',
+                     'Yo, To, Wa, Av, Ta'):
+            native = scratch.textlength(text, font=verse.font)
+            assert slidegen.text_measurer(verse)(text) <= native + 0.5, text
 
     def test_face_accepts_a_bare_pil_font(self):
         """Library callers passing a raw PIL font must keep working."""
@@ -471,7 +498,7 @@ class TestReferenceWeight:
         face = slidegen.Face(font, slidegen._load_kerning(path, index))
 
         img = slidegen.make_gradient().copy()
-        slidegen._draw_text(img, slidegen.LEFT_MARGIN, 400, 'John 17:1 ESV', face)
+        slidegen.draw_text(img, slidegen.LEFT_MARGIN, 400, 'John 17:1 ESV', face)
         groups = ink_rows(img)
         assert groups, weight
         height = groups[0][1] - groups[0][0] + 1

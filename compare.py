@@ -36,7 +36,7 @@ import sys
 import numpy as np
 from PIL import Image, ImageFilter
 
-import slidegen
+import sermonflow as slidegen
 
 INK_THRESHOLD = 235
 
