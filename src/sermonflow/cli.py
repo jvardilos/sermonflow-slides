@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 
 from .fonts import find_unrenderable
 from .layouts import (
@@ -29,11 +29,17 @@ from .layouts import (
     EmptyVerseError,
     SlideOverflowError,
     find_overlong_reference,
+    get_point_style,
     layout_slide,
     point_style_names,
 )
-from .providers import DEFAULT_TRANSLATION, BibleProvider, get_default_provider, get_provider
-from .providers.registry import PROVIDERS
+from .providers import (
+    DEFAULT_TRANSLATION,
+    BibleProvider,
+    get_default_provider,
+    get_provider,
+    provider_names,
+)
 from .render import generate_points, generate_slides, plan_points
 from .text import Verse, find_artifacts, format_verses
 
@@ -58,6 +64,9 @@ def validate(verses: Sequence[Verse]) -> list[str]:
             problems.append(f"{ref}: empty, will be skipped")
         except SlideOverflowError as exc:
             problems.append(str(exc))
+    if not any(text.strip() for text, _ in verses):
+        # Skipping every verse -- or having none -- would render nothing.
+        problems.append("no renderable verses")
     return problems
 
 
@@ -78,16 +87,56 @@ def prepare(
     return verses, validate(verses)
 
 
-def preview_lines(verses: Sequence[Verse]) -> list[tuple[str, list[str]]]:
-    """(reference, wrapped_lines) per non-empty verse -- the dry-run view."""
+def preview_lines(
+    verses: Sequence[Verse], skip_overflow: bool = False
+) -> list[tuple[str, list[str]]]:
+    """
+    (reference, wrapped_lines) per non-empty verse -- the dry-run view.
+
+    A verse too long for a slide raises SlideOverflowError, unless
+    `skip_overflow` is set: then it is left out, for a caller that reports it
+    from validate()'s problems instead and still wants the rest.
+    """
     out: list[tuple[str, list[str]]] = []
     for text, ref in verses:
         try:
             lines, _, _ = layout_slide(text, ref)
         except EmptyVerseError:
             continue
+        except SlideOverflowError:
+            if skip_overflow:
+                continue
+            raise
         out.append((ref, lines))
     return out
+
+
+def _report_and_gate(
+    problems: Sequence[str],
+    fits: Callable[[], bool],
+    strict: bool,
+    dry_run: bool,
+    what: str,
+) -> None:
+    """
+    Print validation problems to stderr, then exit if rendering must not go on.
+
+    Content that cannot be laid out is refused whatever --no-strict says;
+    anything else is refused only under strict. `fits` is called only when
+    there are problems and files would be written, since it lays the content
+    out again.
+    """
+    if not problems:
+        return
+    print(f"{len(problems)} problem(s) found:", file=sys.stderr)
+    for problem in problems:
+        print(f"  - {problem}", file=sys.stderr)
+    if dry_run:
+        return
+    if not fits():
+        raise SystemExit(f"cannot render {what} as given; --no-strict will not help")
+    if strict:
+        raise SystemExit("refusing to render; pass --no-strict to override")
 
 
 def passage_fits(verses: Sequence[Verse]) -> bool:
@@ -122,17 +171,9 @@ def build(
     Returns the list of written paths (empty for a dry run).
     """
     verses, problems = prepare(reference, translation, provider)
-
-    if problems:
-        print(f"{len(problems)} problem(s) found:", file=sys.stderr)
-        for problem in problems:
-            print(f"  - {problem}", file=sys.stderr)
-        if not dry_run and not passage_fits(verses):
-            raise SystemExit(
-                "cannot render this passage as it stands; --no-strict will not help"
-            )
-        if strict and not dry_run:
-            raise SystemExit("refusing to render; pass --no-strict to override")
+    _report_and_gate(
+        problems, lambda: passage_fits(verses), strict, dry_run, "this passage"
+    )
 
     if dry_run:
         try:
@@ -175,6 +216,12 @@ def validate_points(
         plan_points(points, style)
     except EmptyVerseError:
         problems.append("no renderable points")
+        # Planning stops at the empty deck before it looks the style up, so
+        # check the style too -- or fixing the points just uncovers it.
+        try:
+            get_point_style(style)
+        except ValueError as exc:
+            problems.append(str(exc))
     except (SlideOverflowError, ValueError) as exc:
         problems.append(str(exc))
     return problems
@@ -210,17 +257,9 @@ def build_points(
 ) -> list[str]:
     """Validate and render a list of points. Mirrors `build`."""
     problems = validate_points(points, style)
-
-    if problems:
-        print(f"{len(problems)} problem(s) found:", file=sys.stderr)
-        for problem in problems:
-            print(f"  - {problem}", file=sys.stderr)
-        if not dry_run and not points_fit(points, style):
-            raise SystemExit(
-                "cannot render these points as given; --no-strict will not help"
-            )
-        if strict and not dry_run:
-            raise SystemExit("refusing to render; pass --no-strict to override")
+    _report_and_gate(
+        problems, lambda: points_fit(points, style), strict, dry_run, "these points"
+    )
 
     if dry_run:
         try:
@@ -269,7 +308,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "-p",
         "--provider",
         default=None,
-        help=f"force a backend: {' or '.join(map(repr, PROVIDERS))} (default: auto)",
+        help=f"force a backend: {provider_names()} (default: auto)",
     )
     parser.add_argument(
         "-n",

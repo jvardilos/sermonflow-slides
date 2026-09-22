@@ -111,3 +111,25 @@ def prose_corpus():
 def prose_styles():
     """Varied real-world prose registers, keyed by the structure they stress."""
     return dict(PROSE_STYLES)
+
+
+# -- Inputs for the MCP tool and CLI tests ------------------------------------
+
+#: Twelve one-line points: rolling runs past the safe area at this length.
+TOO_MANY_POINTS = [f'Point number {i}.' for i in range(12)]
+
+#: No glyph in the typeface for the Greek, so validation objects -- but it
+#: still draws, which is what makes it the override case for strict=false.
+GREEK = 'Grace, χάρις, is a gift.'
+
+
+class CountingProvider:
+    """A BibleProvider that serves a fixed passage and counts its fetches."""
+
+    def __init__(self, passage):
+        self.passage = passage
+        self.calls = 0
+
+    def fetch_chapter(self, reference, translation='ESV'):
+        self.calls += 1
+        return list(self.passage)

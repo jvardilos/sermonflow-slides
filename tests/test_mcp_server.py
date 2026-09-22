@@ -11,31 +11,13 @@ import os
 
 import pytest
 
-from conftest import OVERFLOW_WORDS, dummy_text
+from conftest import GREEK, OVERFLOW_WORDS, TOO_MANY_POINTS, CountingProvider, dummy_text
 from sermonflow import cli, mcp_server
 
 PASSAGE = [
     ('In the beginning was the word.', 'Book 1:1 ESV'),
     ('And the light shines in the darkness.', 'Book 1:2 ESV'),
 ]
-
-#: Twelve one-line points: rolling runs past the safe area at this length.
-TOO_MANY_POINTS = [f'Point number {i}.' for i in range(12)]
-
-#: No glyph in the typeface, so validation objects -- but it still draws.
-GREEK = 'Grace, χάρις, is a gift.'
-
-
-class CountingProvider:
-    """A provider that serves a fixed passage and counts how often it is asked."""
-
-    def __init__(self, passage=PASSAGE):
-        self.passage = passage
-        self.calls = 0
-
-    def fetch_chapter(self, reference, translation='ESV'):
-        self.calls += 1
-        return list(self.passage)
 
 
 def serve(monkeypatch, passage=PASSAGE):
@@ -121,7 +103,21 @@ class TestStrictHint:
         result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path), strict=False)
         assert not result['rendered']
         assert 'strict=false' not in result['hint']
+        # Scripture is fetched, not typed: the way out is another passage.
+        assert 'translation' in result['hint']
         assert os.listdir(tmp_path) == []
+
+    def test_passage_with_no_verses_is_refused(self, monkeypatch, tmp_path):
+        # Nothing to validate is not the same as nothing wrong.
+        serve(monkeypatch, [])
+        result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path), strict=False)
+        assert not result['rendered']
+        assert result['problems']
+        assert os.listdir(tmp_path) == []
+
+    def test_unknown_style_is_named_even_when_every_point_is_blank(self, tmp_path):
+        result = mcp_server.generate_points(['  ', ''], style='sideways', output_dir=str(tmp_path))
+        assert any('sideways' in problem for problem in result['problems'])
 
     def test_strict_false_hint_for_a_passage_that_would_render(self, monkeypatch, tmp_path):
         serve(monkeypatch, [(GREEK, 'Book 1:1 ESV')])
@@ -159,3 +155,14 @@ class TestPreviewSlides:
         serve(monkeypatch, [(dummy_text(OVERFLOW_WORDS), 'Book 1:1 ESV')])
         result = mcp_server.preview_slides('Book 1')
         assert any('Book 1:1 ESV' in problem for problem in result['problems'])
+
+    def test_the_verses_that_fit_are_still_previewed(self, monkeypatch):
+        serve(monkeypatch, [
+            PASSAGE[0],
+            (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
+            ('A third verse that fits.', 'Book 1:3 ESV'),
+        ])
+        result = mcp_server.preview_slides('Book 1')
+        assert [slide['reference'] for slide in result['slides']] == [
+            'Book 1:1 ESV', 'Book 1:3 ESV'
+        ]

@@ -46,7 +46,7 @@ from .cli import (
     preview_points as _preview_points,
     validate_points,
 )
-from .layouts import DEFAULT_POINT_STYLE, POINT_STYLES, SlideOverflowError
+from .layouts import DEFAULT_POINT_STYLE, POINT_STYLES
 from .providers import DEFAULT_TRANSLATION
 from .render import generate_points as _render_points, generate_slides as _render_slides
 
@@ -55,12 +55,17 @@ mcp = MCPServer("sermonflow-slides", version=__version__)
 #: Refusal hints. strict=false draws past what validation merely doubts -- a
 #: stray marker, a character with no glyph -- but content that cannot be laid
 #: out makes the renderer raise (or render nothing) whatever strict says, so
-#: offering strict=false for it would send the model into a failing retry. The
-#: problems themselves say what to change.
+#: offering strict=false for it would send the model into a failing retry.
+#: Points are the caller's own words, so the problems say what to change;
+#: Scripture is fetched, so the way out is a different passage or translation.
 _OVERRIDE_HINT = "call again with strict=false to render anyway"
-_BLOCKED_HINT = (
-    "this cannot be laid out as it stands; change what the problems name -- "
-    "changing strict will not help"
+_POINTS_BLOCKED_HINT = (
+    "these points cannot be laid out as given; change what the problems name "
+    "-- changing strict will not help"
+)
+_PASSAGE_BLOCKED_HINT = (
+    "this passage cannot be laid out as it stands; try another reference or "
+    "translation -- changing strict will not help"
 )
 
 
@@ -93,14 +98,13 @@ def preview_slides(
     Returns the per-verse wrapped lines and any validation problems.
     """
     verses, problems = prepare(reference, translation)
-    try:
-        previews = preview_lines(verses)
-    except SlideOverflowError:
-        # The verse that does not fit is already in `problems`: validate()
-        # laid out every verse too. As with preview_points, report rather
-        # than raise, so the model sees why.
-        previews = []
-    slides = [{"reference": ref, "lines": lines} for ref, lines in previews]
+    # A verse too long for a slide is left out here and reported in
+    # `problems` (validate() laid it out too), so one overlong verse does not
+    # hide the preview of every verse that fits.
+    slides = [
+        {"reference": ref, "lines": lines}
+        for ref, lines in preview_lines(verses, skip_overflow=True)
+    ]
     return {
         "reference": reference,
         "verse_count": len(slides),
@@ -142,7 +146,7 @@ def generate_slides(
             "reference": reference,
             "rendered": False,
             "problems": problems,
-            "hint": _OVERRIDE_HINT if fits else _BLOCKED_HINT,
+            "hint": _OVERRIDE_HINT if fits else _PASSAGE_BLOCKED_HINT,
         }
 
     # Straight to the renderer rather than through cli.build: that would fetch
@@ -258,7 +262,7 @@ def generate_points(
             "style": style,
             "rendered": False,
             "problems": problems,
-            "hint": _OVERRIDE_HINT if fits else _BLOCKED_HINT,
+            "hint": _OVERRIDE_HINT if fits else _POINTS_BLOCKED_HINT,
         }
 
     # As in generate_slides: the renderer directly, so nothing reaches stdout.

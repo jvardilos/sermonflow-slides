@@ -51,6 +51,11 @@ _ALIASES: dict[str, str] = {
 }
 
 
+def provider_names() -> str:
+    """The canonical backend names, quoted, for help text and errors."""
+    return " or ".join(repr(known) for known in PROVIDERS)
+
+
 def get_default_provider() -> BibleProvider:
     """ESV API if `ESV_API_KEY` is set, else the BibleGateway scraper."""
     return get_provider("esv-api" if os.environ.get(ESV_API_KEY_ENV) else "bible-gateway")
@@ -65,6 +70,5 @@ def get_provider(name: str) -> BibleProvider:
     normalized = name.strip().lower()
     factory = PROVIDERS.get(_ALIASES.get(normalized, normalized))
     if factory is None:
-        choices = " or ".join(repr(known) for known in PROVIDERS)
-        raise ValueError(f"unknown provider {name!r}; use {choices}")
+        raise ValueError(f"unknown provider {name!r}; use {provider_names()}")
     return factory()
