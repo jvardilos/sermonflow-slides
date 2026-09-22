@@ -37,6 +37,7 @@ class TestLabelParsing:
             ("Jude", ("Jude", 1)),                   # BibleGateway's heading
             ("Jude 1-25", ("Jude", 1)),              # the ESV API's canonical
             ("Jude 1–25", ("Jude", 1)),         # ... with an en dash
+            ("Jude 1—25", ("Jude", 1)),         # ... with an em dash
             ("Philemon", ("Philemon", 1)),
             ("Obadiah", ("Obadiah", 1)),
             ("2 John", ("2 John", 1)),
