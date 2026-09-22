@@ -99,12 +99,23 @@ class TestDryRun:
             (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
             ('The third verse fits.', 'Book 1:3 ESV'),
         )
-        # The rest of the passage renders (with --no-strict), so the dry run
-        # previews it and exits 0; the overlong verse is listed on stderr.
-        assert build('Book 1', dry_run=True, provider=provider) == []
+        # Previews the verses that fit, and lists the overlong one on stderr.
+        # Exits non-zero because the default-strict render would refuse: a dry
+        # run has to predict the render for `-n && render` to mean anything.
+        with pytest.raises(SystemExit) as exc:
+            build('Book 1', dry_run=True, provider=provider)
+        assert 'pass --no-strict' in str(exc.value)
         captured = capsys.readouterr()
         assert 'Book 1:1 ESV' in captured.out and 'Book 1:3 ESV' in captured.out
         assert 'Book 1:2 ESV' in captured.err
+
+    def test_no_strict_dry_run_of_the_same_passage_exits_zero(self, capsys):
+        provider = serving(
+            ('The first verse fits.', 'Book 1:1 ESV'),
+            (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
+        )
+        assert build('Book 1', dry_run=True, strict=False, provider=provider) == []
+        assert 'Book 1:1 ESV' in capsys.readouterr().out
 
     def test_a_passage_where_nothing_fits_exits_non_zero(self):
         provider = serving((dummy_text(OVERFLOW_WORDS), 'Book 1:1 ESV'))

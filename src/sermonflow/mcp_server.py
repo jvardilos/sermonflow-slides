@@ -39,10 +39,11 @@ from mcp.server import MCPServer
 
 from . import __version__
 from .cli import (
+    SKIP_MARKER,
     points_fit,
     prepare,
-    preview_lines,
     preview_points as _preview_points,
+    renderable_verses,
     validate_points,
 )
 from .layouts import DEFAULT_POINT_STYLE, POINT_STYLES
@@ -60,8 +61,9 @@ mcp = MCPServer("sermonflow-slides", version=__version__)
 #: -- and the ESV API ignores the translation -- so for a passage the honest
 #: next step is telling the user.
 _OVERRIDE_HINT = (
-    "call again with strict=false to render anyway; anything the problems "
-    "mark 'would be skipped' is left out, so tell the user what is missing"
+    "call again with strict=false to render anyway; `skipped` lists what is "
+    f"left out (the problems mark it '{SKIP_MARKER}'), so tell the user what "
+    "is missing"
 )
 #: On a render that left something out. `count` alone reads like a full deck.
 _SKIPPED_HINT = (
@@ -107,14 +109,16 @@ def preview_slides(
     Returns the per-verse wrapped lines and any validation problems.
     """
     verses, problems = prepare(reference, translation)
-    # A verse too long for a slide is left out here, as generate_slides leaves
-    # it out, and reported in `problems`.
-    slides = [{"reference": ref, "lines": lines} for ref, lines in preview_lines(verses)]
+    # A verse too long for a slide is left out of `slides`, as generate_slides
+    # leaves it out of the deck. `skipped` names those, so the safe look before
+    # committing files says which verse will go missing.
+    previews, skipped = renderable_verses(verses)
     return {
         "reference": reference,
-        # Every verse with text, including any left out of `slides` above.
+        # Every verse with text, including any left out of `slides` below.
         "verse_count": sum(1 for text, _ in verses if text.strip()),
-        "slides": slides,
+        "slides": [{"reference": ref, "lines": lines} for ref, lines in previews],
+        "skipped": skipped,
         "problems": problems,
     }
 
@@ -152,16 +156,16 @@ def generate_slides(
     skipped: list[str] = []
     fits = True
     if problems:
-        renders = {ref for ref, _ in preview_lines(verses)}
         # Blank or too long, a verse that does not render is one the deck is
-        # short, so name it either way.
-        skipped = [ref for _, ref in verses if ref not in renders]
-        fits = bool(renders)
+        # short, so `skipped` names it either way.
+        previews, skipped = renderable_verses(verses)
+        fits = bool(previews)
     if problems and (strict or not fits):
         return {
             "reference": reference,
             "rendered": False,
             "problems": problems,
+            "skipped": skipped,
             "hint": _OVERRIDE_HINT if fits else _PASSAGE_BLOCKED_HINT,
         }
 

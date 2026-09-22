@@ -155,13 +155,12 @@ def generate_slides(
 
     slides: list[Placed] = []
     for index, (text, ref) in enumerate(prepared, 1):
-        if not text.strip():
-            continue
         try:
             slides.append(plan_verse(text, ref, index))
         except (EmptyVerseError, SlideOverflowError):
-            # Both are what validate() reports as "would be skipped", and
-            # preview_lines leaves out; the three must agree on what renders.
+            # One rule, one place: blank text raises EmptyVerseError, so there
+            # is no separate blank check. Both are what validate() marks
+            # "would be skipped" and renderable_verses leaves out.
             continue
     return render_deck(slides, output_dir)
 

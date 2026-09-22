@@ -20,6 +20,7 @@ from conftest import (
     needs_greek_flagged,
 )
 from sermonflow import cli, mcp_server
+from sermonflow.cli import SKIP_MARKER
 
 PASSAGE = [
     ('In the beginning was the word.', 'Book 1:1 ESV'),
@@ -185,8 +186,10 @@ class TestOverflowingVerse:
         assert 'strict=false' in result['hint']
         # The hint tells the model to relay what will be left out, and to
         # recognise it by the marker validate() writes.
-        assert 'would be skipped' in result['hint']
-        assert any('would be skipped' in problem for problem in result['problems'])
+        assert SKIP_MARKER in result['hint']
+        assert any(SKIP_MARKER in problem for problem in result['problems'])
+        # The refusal names them too, so the model need not read prose.
+        assert result['skipped'] == ['Book 1:2 ESV']
         assert os.listdir(tmp_path) == []
 
     def test_not_strict_renders_the_verses_that_fit(self, monkeypatch, tmp_path):
@@ -197,7 +200,7 @@ class TestOverflowingVerse:
             'Book_1_001.tif', 'Book_1_003.tif'
         ]
         assert any(
-            'Book 1:2 ESV' in problem and 'would be skipped' in problem
+            'Book 1:2 ESV' in problem and SKIP_MARKER in problem
             for problem in result['problems']
         )
         # The success result says so too: `problems` alone reads like a warning
@@ -216,6 +219,22 @@ class TestPreviewSlides:
         serve(monkeypatch, [(dummy_text(OVERFLOW_WORDS), 'Book 1:1 ESV')])
         result = mcp_server.preview_slides('Book 1')
         assert any('Book 1:1 ESV' in problem for problem in result['problems'])
+
+    def test_the_preview_names_what_will_be_left_out(self, monkeypatch):
+        serve(monkeypatch, mixed_passage())
+        result = mcp_server.preview_slides('Book 1')
+        # "The safe look before committing files" has to say a verse will go
+        # missing, not leave the model to diff counts or read prose.
+        assert result['skipped'] == ['Book 1:2 ESV']
+
+    def test_two_verses_with_one_reference_do_not_hide_a_skip(self, monkeypatch):
+        # A skip is positional: a shared reference must not make it invisible.
+        serve(monkeypatch, [
+            ('Short.', 'Book 1:1 ESV'),
+            (dummy_text(OVERFLOW_WORDS), 'Book 1:1 ESV'),
+        ])
+        result = mcp_server.preview_slides('Book 1')
+        assert result['skipped'] == ['Book 1:1 ESV']
 
     def test_the_verses_that_fit_are_still_previewed(self, monkeypatch):
         serve(monkeypatch, mixed_passage())
