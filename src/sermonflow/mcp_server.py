@@ -62,7 +62,7 @@ mcp = MCPServer("sermonflow-slides", version=__version__)
 #: next step is telling the user.
 _OVERRIDE_HINT = (
     "call again with strict=false to render anyway; anything the problems "
-    "mark 'will be skipped' is left out, so tell the user which"
+    "mark 'will be skipped' is left out, so tell the user what is missing"
 )
 _POINTS_BLOCKED_HINT = (
     "these points cannot be laid out as given; change what the problems name "
