@@ -29,6 +29,9 @@ retrieve  →  format  →  validate  →  render
 3. **Validate** — refuse to render if anything suspicious survived: leftover
    markers, straight quotes, characters the font cannot draw, verses too long
    for a slide. Fails loudly rather than putting `[a]` on a screen mid-service.
+   Told to render anyway (`--no-strict`, `strict=false`), it leaves out what
+   the problems mark `would be skipped` — a verse too long for a slide — and
+   names it, and still refuses a passage where nothing fits.
 4. **Render** — balanced line wrapping, grid-snapped vertical centering, the
    black gradient scrim, output as RGBA TIFF.
 
@@ -206,8 +209,8 @@ with their schemas.
 | `-o`, `--output-dir` | where slides land (default `./slides`) |
 | `-t`, `--translation` | version code (default `ESV`) |
 | `-p`, `--provider` | force `esv-api` or `bible-gateway` (default: auto) |
-| `-n`, `--dry-run` | print wrapped lines, render nothing |
-| `--no-strict` | render even if validation complains |
+| `-n`, `--dry-run` | print wrapped lines, render nothing; exits non-zero when the render would refuse, so `-n && render` predicts it |
+| `--no-strict` | render past validation warnings, leaving out anything marked `would be skipped`; a passage with nothing to render is still refused |
 | `--points` | render these statements as point slides instead of a chapter |
 | `--style` | point layout: `rolling` (default) or `centered` |
 

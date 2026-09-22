@@ -33,17 +33,19 @@ from __future__ import annotations
 
 import argparse
 import os
+from collections.abc import Sequence
 from typing import Any
 
 from mcp.server import MCPServer
 
 from . import __version__
 from .cli import (
-    passage_fits,
+    SKIP_MARKER,
     points_fit,
     prepare,
-    preview_lines,
     preview_points as _preview_points,
+    renderable_verses,
+    skipped_points,
     validate_points,
 )
 from .layouts import DEFAULT_POINT_STYLE, POINT_STYLES
@@ -53,13 +55,26 @@ from .render import generate_points as _render_points, generate_slides as _rende
 mcp = MCPServer("sermonflow-slides", version=__version__)
 
 #: Refusal hints. strict=false draws past what validation merely doubts -- a
-#: stray marker, a character with no glyph -- but content that cannot be laid
-#: out makes the renderer raise (or render nothing) whatever strict says, so
-#: offering strict=false for it would send the model into a failing retry.
-#: Points are the caller's own words, so the problems say what to change.
-#: Scripture is fetched and cannot be edited -- and the ESV API ignores the
-#: translation -- so for a passage the honest next step is telling the user.
+#: stray marker, a character with no glyph -- and leaves out a verse too long
+#: for a slide. But content with nothing to render makes the renderer raise (or
+#: render nothing) whatever strict says, so offering strict=false for it would
+#: send the model into a failing retry. Points are the caller's own words, so
+#: the problems say what to change. Scripture is fetched and cannot be edited
+#: -- and the ESV API ignores the translation -- so for a passage the honest
+#: next step is telling the user.
 _OVERRIDE_HINT = "call again with strict=false to render anyway"
+#: When something would be dropped, say so: the caller must not promise a
+#: complete deck, and `skipped` saves reading the problems as prose.
+_OVERRIDE_SKIP_HINT = (
+    "call again with strict=false to render anyway; `skipped` lists what is "
+    f"left out (the problems mark it '{SKIP_MARKER}'), so tell the user what "
+    "is missing"
+)
+#: On a render that left something out. `count` alone reads like a full deck.
+_SKIPPED_HINT = (
+    "rendered, but `skipped` lists what never reached a slide -- tell the user "
+    "what is missing from the deck"
+)
 _POINTS_BLOCKED_HINT = (
     "these points cannot be laid out as given; change what the problems name "
     "-- changing strict will not help"
@@ -68,6 +83,13 @@ _PASSAGE_BLOCKED_HINT = (
     "this passage cannot be laid out on these slides as it stands, and "
     "changing strict will not help; tell the user what the problems say"
 )
+
+
+def _refusal_hint(fits: bool, skipped: Sequence[str], blocked: str) -> str:
+    """The hint for a refusal: blocked, overridable, or overridable with a cost."""
+    if not fits:
+        return blocked
+    return _OVERRIDE_SKIP_HINT if skipped else _OVERRIDE_HINT
 
 
 def _resolve_dir(output_dir: str) -> str:
@@ -96,21 +118,23 @@ def preview_slides(
         reference: book and chapter, e.g. "John 17" or "1 John 4".
         translation: version code (default ESV; ignored by the ESV API backend).
 
-    Returns the per-verse wrapped lines and any validation problems.
+    Returns `slides` (the wrapped lines per verse that will render),
+    `skipped` (references of the verses that will not -- blank, or too long for
+    a slide), `verse_count` for the whole chapter, and any validation problems.
+    A non-empty `skipped` means the deck would come out short of those verses:
+    say so before rendering.
     """
     verses, problems = prepare(reference, translation)
-    # A verse too long for a slide is left out here and reported in
-    # `problems` (validate() laid it out too), so one overlong verse does not
-    # hide the preview of every verse that fits.
-    slides = [
-        {"reference": ref, "lines": lines}
-        for ref, lines in preview_lines(verses, skip_overflow=True)
-    ]
+    # A verse too long for a slide is left out of `slides`, as generate_slides
+    # leaves it out of the deck. `skipped` names those, so the safe look before
+    # committing files says which verse will go missing.
+    previews, skipped = renderable_verses(verses)
     return {
         "reference": reference,
-        # Every verse with text, including any left out of `slides` above.
-        "verse_count": sum(1 for text, _ in verses if text.strip()),
-        "slides": slides,
+        # Every verse fetched, so len(slides) + len(skipped) adds up.
+        "verse_count": len(verses),
+        "slides": [{"reference": ref, "lines": lines} for ref, lines in previews],
+        "skipped": skipped,
         "problems": problems,
     }
 
@@ -134,21 +158,32 @@ def generate_slides(
         translation: version code (default ESV; ignored by the ESV API backend).
         output_dir: folder to write the TIFF slides into (created if missing).
         strict: when True, refuse to render if validation finds any problem and
-            return those problems instead of writing files. A passage that
-            cannot be laid out -- a verse too long for a slide, or no text at
-            all -- is refused either way.
+            return those problems instead of writing files. When False, a
+            verse too long for a slide is skipped (the problems name it) and
+            the rest render. A passage where nothing fits, or with no text at
+            all, is refused either way.
 
-    Returns the written paths, or the problems and a hint when it refuses.
+    Returns the written paths plus `skipped` (references that never reached a
+    slide), or the problems, `skipped` and a hint when it refuses.
     """
     verses, problems = prepare(reference, translation)
-    # validate() has already laid out every verse, so a clean passage fits.
-    fits = not problems or passage_fits(verses)
+    # One layout pass answers both questions: whether anything renders, and
+    # which verses with text the render will leave out. A clean passage needs
+    # neither -- validate() laid every verse out already.
+    skipped: list[str] = []
+    fits = True
+    if problems:
+        # Blank or too long, a verse that does not render is one the deck is
+        # short, so `skipped` names it either way.
+        previews, skipped = renderable_verses(verses)
+        fits = bool(previews)
     if problems and (strict or not fits):
         return {
             "reference": reference,
             "rendered": False,
             "problems": problems,
-            "hint": _OVERRIDE_HINT if fits else _PASSAGE_BLOCKED_HINT,
+            "skipped": skipped,
+            "hint": _refusal_hint(fits, skipped, _PASSAGE_BLOCKED_HINT),
         }
 
     # Straight to the renderer rather than through cli.build: that would fetch
@@ -156,14 +191,19 @@ def generate_slides(
     # stdio is the protocol stream.
     output_dir = _resolve_dir(output_dir)
     paths = _render_slides(verses, output_dir=output_dir, formatted=True)
-    return {
+    result: dict[str, Any] = {
         "reference": reference,
         "rendered": True,
         "count": len(paths),
         "paths": paths,
         "output_dir": output_dir,
         "problems": problems,
+        "skipped": skipped,
     }
+    if skipped:
+        # `count` on its own reads like a complete deck.
+        result["hint"] = _SKIPPED_HINT
+    return result
 
 
 @mcp.tool()
@@ -212,7 +252,8 @@ def preview_points(
             short list of steps. Call list_layouts for the current set.
 
     Returns one entry per slide it would render, with the wrapped lines, plus
-    any validation problems.
+    `skipped` (labels of the points that will not reach a slide) and any
+    validation problems.
     """
     problems = validate_points(points, style)
     try:
@@ -222,12 +263,20 @@ def preview_points(
         ]
     except ValueError:
         # Whatever made planning impossible is already in `problems`:
-        # validate_points ran the same plan and recorded it.
-        return {"style": style, "slide_count": 0, "slides": [], "problems": problems}
+        # validate_points ran the same plan and recorded it. Nothing will
+        # render, so every point is missing, not just the blank ones.
+        return {
+            "style": style,
+            "slide_count": 0,
+            "slides": [],
+            "skipped": skipped_points(points, blocked=True),
+            "problems": problems,
+        }
     return {
         "style": style,
         "slide_count": len(slides),
         "slides": slides,
+        "skipped": skipped_points(points),
         "problems": problems,
     }
 
@@ -254,30 +303,39 @@ def generate_points(
             return those problems instead of writing files. Points that cannot
             be laid out at all are refused either way.
 
-    Returns the written paths, or the problems and a hint when it refuses.
+    Returns the written paths plus `skipped` (labels of the points that never
+    reached a slide -- the blank ones), or the problems, `skipped` and a hint
+    when it refuses.
     """
     problems = validate_points(points, style)
     # validate_points has already planned the deck, so a clean deck fits.
     fits = not problems or points_fit(points, style)
+    # Blocked: nothing renders, so every point is missing, not just the blanks.
+    skipped = skipped_points(points, blocked=not fits) if problems else []
     if problems and (strict or not fits):
         return {
             "style": style,
             "rendered": False,
             "problems": problems,
-            "hint": _OVERRIDE_HINT if fits else _POINTS_BLOCKED_HINT,
+            "skipped": skipped,
+            "hint": _refusal_hint(fits, skipped, _POINTS_BLOCKED_HINT),
         }
 
     # As in generate_slides: the renderer directly, so nothing reaches stdout.
     output_dir = _resolve_dir(output_dir)
     paths = _render_points(points, output_dir=output_dir, style=style)
-    return {
+    result: dict[str, Any] = {
         "style": style,
         "rendered": True,
         "count": len(paths),
         "paths": paths,
         "output_dir": output_dir,
         "problems": problems,
+        "skipped": skipped,
     }
+    if skipped:
+        result["hint"] = _SKIPPED_HINT
+    return result
 
 
 def main() -> None:

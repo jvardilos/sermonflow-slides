@@ -45,6 +45,12 @@ from .render import generate_points, generate_slides, plan_points
 from .text import Verse, find_artifacts, format_verses
 
 
+#: How a problem says its content will not reach a slide. The MCP hints tell
+#: the model to find dropped content by this phrase, so every producer of it
+#: interpolates this one constant rather than spelling it out again.
+SKIP_MARKER = "would be skipped"
+
+
 def validate(verses: Sequence[Verse]) -> list[str]:
     """
     Check formatted verses for leftover artifacts and unrenderable lengths.
@@ -52,6 +58,7 @@ def validate(verses: Sequence[Verse]) -> list[str]:
     Returns a list of human-readable problem strings; empty means clean.
     """
     problems: list[str] = []
+    renderable = 0
     for text, ref in verses:
         for kind, snippet in find_artifacts(text):
             problems.append(f"{ref}: {kind} {snippet!r}")
@@ -62,10 +69,12 @@ def validate(verses: Sequence[Verse]) -> list[str]:
         try:
             layout_slide(text, ref)
         except EmptyVerseError:
-            problems.append(f"{ref}: empty, will be skipped")
+            problems.append(f"{ref}: empty, {SKIP_MARKER}")
         except SlideOverflowError as exc:
-            problems.append(str(exc))
-    if not any(text.strip() for text, _ in verses):
+            problems.append(f"{exc}; {SKIP_MARKER}")
+        else:
+            renderable += 1
+    if not renderable:
         # Skipping every verse -- or having none -- would render nothing.
         problems.append("no renderable verses")
     return problems
@@ -88,72 +97,73 @@ def prepare(
     return verses, validate(verses)
 
 
-def preview_lines(
-    verses: Sequence[Verse], skip_overflow: bool = False
-) -> list[tuple[str, list[str]]]:
+def renderable_verses(
+    verses: Sequence[Verse],
+) -> tuple[list[tuple[str, list[str]]], list[str]]:
     """
-    (reference, wrapped_lines) per non-empty verse -- the dry-run view.
+    One pass over a passage: ((reference, wrapped_lines) per verse that will
+    render, references of the verses that will not).
 
-    A verse too long for a slide raises SlideOverflowError, unless
-    `skip_overflow` is set: then it is left out, for a caller that reports it
-    from validate()'s problems instead and still wants the rest.
+    Empty verses and verses too long for a slide are left out, as the renderer
+    leaves them out; validate() reports them. The split is positional, so two
+    verses that share a reference cannot mask each other.
     """
     out: list[tuple[str, list[str]]] = []
+    skipped: list[str] = []
     for text, ref in verses:
         try:
             lines, _, _ = layout_slide(text, ref)
-        except EmptyVerseError:
+        except (EmptyVerseError, SlideOverflowError):
+            skipped.append(ref)
             continue
-        except SlideOverflowError:
-            if skip_overflow:
-                continue
-            raise
         out.append((ref, lines))
-    return out
+    return out, skipped
 
 
-def _report_and_gate(
-    problems: Sequence[str],
-    fits: Callable[[], bool],
-    *,
-    strict: bool,
-    dry_run: bool,
-    what: str,
-) -> None:
-    """
-    Print validation problems to stderr, then exit if rendering must not go on.
-
-    Content that cannot be laid out is refused whatever --no-strict says;
-    anything else is refused only under strict. `fits` is called only when
-    there are problems and files would be written, since it lays the content
-    out again.
-    """
+def _report(problems: Sequence[str]) -> None:
+    """Print validation problems to stderr."""
     if not problems:
         return
     print(f"{len(problems)} problem(s) found:", file=sys.stderr)
     for problem in problems:
         print(f"  - {problem}", file=sys.stderr)
-    if dry_run:
+
+
+def _report_skips(skipped: Sequence[str]) -> None:
+    """Name on stdout what never reached a slide, beside the rendered count."""
+    if skipped:
+        print(f"Skipped {len(skipped)}: {', '.join(skipped)}")
+
+
+def _refuse(
+    problems: Sequence[str],
+    fits: Callable[[], bool],
+    *,
+    strict: bool,
+    drops: bool,
+    what: str,
+) -> None:
+    """
+    Exit if rendering must not go on.
+
+    Content that cannot render at all is refused whatever --no-strict says;
+    anything else is refused only under strict. A dry run refuses on the same
+    terms, one call later, so it predicts the render it precedes and
+    `-n && render` is worth chaining. `fits` is called only when there are
+    problems, since it lays the content out again. `drops` says whether the
+    override would leave something out, so the message can name that cost.
+    """
+    if not problems:
         return
     if not fits():
         raise SystemExit(f"cannot render {what} as given; --no-strict will not help")
     if strict:
-        raise SystemExit("refusing to render; pass --no-strict to override")
-
-
-def passage_fits(verses: Sequence[Verse]) -> bool:
-    """
-    Whether the passage can be rendered at all: every verse lays out on a slide
-    and at least one has text.
-
-    This is the line --no-strict (strict=false over MCP) cannot cross. Other
-    problems are doubts the renderer can draw past; these make it raise, or
-    render nothing.
-    """
-    try:
-        return bool(preview_lines(verses))
-    except SlideOverflowError:
-        return False
+        cost = (
+            f" -- anything the problems mark '{SKIP_MARKER}' is left out"
+            if drops
+            else ""
+        )
+        raise SystemExit(f"refusing to render; pass --no-strict to override{cost}")
 
 
 def build(
@@ -173,29 +183,42 @@ def build(
     Returns the list of written paths (empty for a dry run).
     """
     verses, problems = prepare(reference, translation, provider)
-    _report_and_gate(
-        problems,
-        lambda: passage_fits(verses),
-        strict=strict,
-        dry_run=dry_run,
-        what="this passage",
-    )
+    _report(problems)
 
     if dry_run:
-        # A verse too long for a slide is already listed on stderr above;
-        # leave it out rather than let it hide the verses that do fit.
-        for ref, lines in preview_lines(verses, skip_overflow=True):
+        # A verse too long for a slide is listed on stderr above and left out
+        # here, as it will be from the render. Show the rest, name the losses
+        # as the render does, then refuse on the same terms it would.
+        preview, skipped = renderable_verses(verses)
+        for ref, lines in preview:
             print(f"\n{ref}  ({len(lines)} lines)")
             for line in lines:
                 print(f"    {line}")
-        # Then exit non-zero, as a points dry run does, so `-n && render`
-        # stops here. A clean passage fits: validate() laid it all out.
-        if problems and not passage_fits(verses):
-            raise SystemExit("cannot lay this passage out; see the problems above")
+        _report_skips(skipped)
+        _refuse(
+            problems,
+            lambda: bool(preview),
+            strict=strict,
+            drops=bool(skipped),
+            what="this passage",
+        )
         return []
+
+    skipped: list[str] = []
+    if problems:
+        # The same pass answers "does anything render" and "what is left out".
+        previews, skipped = renderable_verses(verses)
+        _refuse(
+            problems,
+            lambda: bool(previews),
+            strict=strict,
+            drops=bool(skipped),
+            what="this passage",
+        )
 
     paths = generate_slides(verses, output_dir=output_dir, formatted=True)
     print(f"Rendered {len(paths)} slides to {output_dir}")
+    _report_skips(skipped)
     return paths
 
 
@@ -216,7 +239,7 @@ def validate_points(
     problems: list[str] = []
     for i, text in enumerate(points, 1):
         if not text.strip():
-            problems.append(f"point {i}: empty, will be skipped")
+            problems.append(f"point {i}: empty, {SKIP_MARKER}")
             continue
         for kind, snippet in find_unrenderable(text):
             problems.append(f"point {i}: {kind} {snippet}")
@@ -238,6 +261,22 @@ def validate_points(
     return problems
 
 
+def skipped_points(points: Sequence[str], *, blocked: bool = False) -> list[str]:
+    """
+    Labels of the points that will not reach a slide.
+
+    Normally the blank ones, which plan_points filters on the same rule. With
+    `blocked` -- the deck cannot be planned at all -- every point is named,
+    since none of them will render: the same meaning renderable_verses gives
+    `skipped` for a passage where nothing fits.
+    """
+    return [
+        f"point {i}"
+        for i, text in enumerate(points, 1)
+        if blocked or not text.strip()
+    ]
+
+
 def preview_points(
     points: Sequence[str], style: str = DEFAULT_POINT_STYLE
 ) -> list[tuple[str, list[str]]]:
@@ -250,7 +289,7 @@ def preview_points(
 
 def points_fit(points: Sequence[str], style: str = DEFAULT_POINT_STYLE) -> bool:
     """
-    As `passage_fits`, for a deck: a known style, some text, and a plan that fits.
+    Whether the deck renders: a known style, some text, and a plan that fits.
 
     Any ValueError means it does not fit -- the expected ones (overflow, no
     text, unknown style) and an unforeseen one alike, since rendering would
@@ -273,13 +312,8 @@ def build_points(
 ) -> list[str]:
     """Validate and render a list of points. Mirrors `build`."""
     problems = validate_points(points, style)
-    _report_and_gate(
-        problems,
-        lambda: points_fit(points, style),
-        strict=strict,
-        dry_run=dry_run,
-        what="these points",
-    )
+    _report(problems)
+    dropped = skipped_points(points)
 
     if dry_run:
         try:
@@ -293,10 +327,28 @@ def build_points(
             print(f"\n{stem}  ({len(lines)} lines)")
             for line in lines:
                 print(f"    {line}")
+        _report_skips(dropped)
+        # preview_points planned the deck, so it fits; refuse on strict as the
+        # render would, so a dry run predicts it.
+        _refuse(
+            problems,
+            lambda: bool(preview),
+            strict=strict,
+            drops=bool(dropped),
+            what="these points",
+        )
         return []
 
+    _refuse(
+        problems,
+        lambda: points_fit(points, style),
+        strict=strict,
+        drops=bool(dropped),
+        what="these points",
+    )
     paths = generate_points(points, output_dir=output_dir, style=style)
     print(f"Rendered {len(paths)} {style} point slides to {output_dir}")
+    _report_skips(dropped)
     return paths
 
 
@@ -334,14 +386,16 @@ def main(argv: Sequence[str] | None = None) -> None:
         "-n",
         "--dry-run",
         action="store_true",
-        help="print wrapped lines instead of rendering",
+        help="print wrapped lines instead of rendering, then exit as the "
+        "render would, so `-n && render` predicts it",
     )
     parser.add_argument(
         "--no-strict",
         dest="strict",
         action="store_false",
-        help="render past validation warnings; content that cannot be laid out "
-        "is still refused",
+        help="render past validation warnings, leaving out anything the "
+        f"problems mark '{SKIP_MARKER}'; a passage or deck with nothing to "
+        "render is still refused",
     )
     args = parser.parse_args(argv)
 

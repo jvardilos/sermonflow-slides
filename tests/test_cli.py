@@ -1,10 +1,10 @@
 """
 The CLI's refusal messages.
 
---no-strict can render past what validation merely doubts, not past content
-that cannot be laid out. Offering it for the second sends the operator into a
-traceback (#20), so for that case the CLI has to exit with a reason instead --
-and for the first, --no-strict still has to render.
+--no-strict renders past what validation merely doubts, and leaves out a verse
+too long for a slide. It cannot force content with nothing to render: offering
+it for that sent the operator into a traceback (#20), so the CLI exits with a
+reason instead.
 """
 
 import os
@@ -20,7 +20,7 @@ from conftest import (
     needs_greek_flagged,
 )
 from sermonflow import cli
-from sermonflow.cli import build, build_points, validate_points
+from sermonflow.cli import SKIP_MARKER, build, build_points, validate_points
 
 
 def serving(*verses):
@@ -65,10 +65,74 @@ class TestNoStrictStillRenders:
         paths = build('Book 1', output_dir=str(tmp_path), strict=False, provider=provider)
         assert len(paths) == 1 and os.path.isfile(paths[0])
 
+    def test_strict_refusal_mentions_skipping_only_when_something_is_skipped(
+        self, tmp_path
+    ):
+        # A doubtful glyph is not a skip: promising one would misdescribe it.
+        provider = serving((GREEK, 'Book 1:1 ESV'))
+        with pytest.raises(SystemExit) as exc:
+            build('Book 1', output_dir=str(tmp_path), provider=provider)
+        assert 'pass --no-strict' in str(exc.value)
+        assert SKIP_MARKER not in str(exc.value)
+
     def test_strict_still_refuses_and_offers_no_strict(self, tmp_path):
         with pytest.raises(SystemExit) as exc:
             build_points([GREEK], output_dir=str(tmp_path))
         assert 'pass --no-strict' in str(exc.value)
+
+
+class TestOverflowingPassage:
+    """
+    No Greek in these, so they must not sit under @needs_greek_flagged: they
+    are the CLI half of "render the rest, and say what was left out".
+    """
+
+    def test_passage_with_an_overlong_verse_renders_the_rest(self, tmp_path, capsys):
+        provider = serving(
+            ('The first verse fits.', 'Book 1:1 ESV'),
+            (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
+        )
+        paths = build('Book 1', output_dir=str(tmp_path), strict=False, provider=provider)
+        assert [os.path.basename(path) for path in paths] == ['Book_1_001.tif']
+        # "Rendered 1 slides" alone hides the missing verse; the summary names
+        # it, as the MCP caller's `skipped` does. (The problems on stderr
+        # scroll past and are easy to redirect away.)
+        summary = capsys.readouterr().out
+        assert 'Book 1:2 ESV' in summary and 'skipped' in summary.lower()
+
+    def test_strict_refuses_a_mixed_passage_and_offers_no_strict(self, tmp_path):
+        provider = serving(
+            ('The first verse fits.', 'Book 1:1 ESV'),
+            (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
+        )
+        with pytest.raises(SystemExit) as exc:
+            build('Book 1', output_dir=str(tmp_path), provider=provider)
+        # Not "--no-strict will not help": the rest of the passage renders.
+        assert 'pass --no-strict' in str(exc.value)
+        # And the operator is told the override drops something.
+        assert 'skipped' in str(exc.value)
+        assert os.listdir(tmp_path) == []
+
+
+class TestSkippedSummary:
+    def test_points_name_what_was_dropped(self, tmp_path, capsys):
+        paths = build_points(
+            ['One.', '   ', 'Three.'], output_dir=str(tmp_path), strict=False
+        )
+        assert len(paths) == 2
+        # --no-strict's help promises this for "a passage or deck".
+        summary = capsys.readouterr().out
+        assert 'point 2' in summary and 'skipped' in summary.lower()
+
+    def test_dry_run_names_what_the_render_would_drop(self, capsys):
+        provider = serving(
+            ('The first verse fits.', 'Book 1:1 ESV'),
+            (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
+        )
+        build('Book 1', dry_run=True, strict=False, provider=provider)
+        # A dry run predicts the render, summary included.
+        summary = capsys.readouterr().out
+        assert 'Book 1:2 ESV' in summary and 'skipped' in summary.lower()
 
 
 class TestDryRun:
@@ -78,19 +142,35 @@ class TestDryRun:
             (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
             ('The third verse fits.', 'Book 1:3 ESV'),
         )
-        # Exits non-zero, as a points dry run does, so `-n && render` stops --
-        # but only after previewing the verses that fit.
+        # Previews the verses that fit, and lists the overlong one on stderr.
+        # Exits non-zero because the default-strict render would refuse: a dry
+        # run has to predict the render for `-n && render` to mean anything.
         with pytest.raises(SystemExit) as exc:
             build('Book 1', dry_run=True, provider=provider)
-        assert exc.value.code not in (None, 0)
+        assert 'pass --no-strict' in str(exc.value)
         captured = capsys.readouterr()
         assert 'Book 1:1 ESV' in captured.out and 'Book 1:3 ESV' in captured.out
         assert 'Book 1:2 ESV' in captured.err
 
+    def test_no_strict_dry_run_of_the_same_passage_exits_zero(self, capsys):
+        provider = serving(
+            ('The first verse fits.', 'Book 1:1 ESV'),
+            (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
+        )
+        assert build('Book 1', dry_run=True, strict=False, provider=provider) == []
+        assert 'Book 1:1 ESV' in capsys.readouterr().out
+
+    def test_a_passage_where_nothing_fits_exits_non_zero(self):
+        provider = serving((dummy_text(OVERFLOW_WORDS), 'Book 1:1 ESV'))
+        with pytest.raises(SystemExit) as exc:
+            build('Book 1', dry_run=True, provider=provider)
+        # Not just any exit: offering --no-strict here would be the #20 trap.
+        assert 'will not help' in str(exc.value)
+
     def test_a_passage_with_no_verses_exits_non_zero(self):
         with pytest.raises(SystemExit) as exc:
             build('Book 1', dry_run=True, provider=serving())
-        assert exc.value.code not in (None, 0)
+        assert 'will not help' in str(exc.value)
 
 
 class TestValidatePoints:
