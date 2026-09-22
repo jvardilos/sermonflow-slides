@@ -51,9 +51,10 @@ Claude usually previews first and shows you how every slide will wrap. It
 renders once you approve the preview, or straight away if you asked outright
 for the files. Name the folder you want the slides in; otherwise Claude picks
 one and tells you the path. If validation finds a problem, it stops and tells
-you instead of rendering. The
-kinds of problem it catches: leftover footnote markers, a character the font
-cannot draw, a verse too long for one slide, or too many points for one screen.
+you instead of rendering. The kinds of problem it catches: leftover footnote
+markers, a character the font cannot draw, a verse too long for one slide, or
+too many points for one screen. Tell it to go ahead anyway and it renders what
+it can: a verse too long for a slide is left out, and Claude tells you which.
 
 ### Slide types
 
@@ -115,12 +116,16 @@ The server (`src/sermonflow/mcp_server.py`) gives Claude five tools:
 | `generate_points(points, style="rolling", output_dir="./slides", strict=True)` | Renders a list of points. Returns absolute paths, or the problems and a hint when it refuses. |
 | `list_layouts()` | The point styles and when each fits, read from the layout registry. |
 
-Validation problems come in two kinds. Some, like a character the font can't
-draw, are doubts: `strict=True` refuses on them, and `strict=False` renders
-anyway. Others mean the content can't be laid out at all, such as a verse
-too long for one slide, points that run past the safe area, or no text. Those
-are refused either way, and the hint says so, so Claude doesn't retry
-something that can't work.
+Validation problems come in three kinds:
+
+- **Doubts**, like a character the font can't draw. `strict=True` refuses;
+  `strict=False` renders anyway.
+- **A verse too long for one slide.** `strict=True` refuses; `strict=False`
+  renders the rest of the passage and leaves that verse out. The problem says
+  `will be skipped`, and the hint tells Claude to name the verse to the user.
+- **Nothing to render**: points that run past the safe area, no text, or a
+  passage where no verse fits. These are refused either way, and the hint says
+  so, so Claude doesn't retry something that can't work.
 
 The tools are split by slide type rather than combined behind one mode flag,
 because the split lets Claude choose from what the user said. A passage named
