@@ -180,3 +180,22 @@ class TestPreviewSlides:
         ]
         # The chapter still has three verses; only the previews skip one.
         assert result['verse_count'] == 3
+
+
+class TestUnforeseenPlanningError:
+    """
+    If planning raises a ValueError nobody anticipated, validation reports it
+    and rendering would raise it too -- so the tool refuses, whatever strict
+    says, instead of failing with the exception.
+    """
+
+    @pytest.mark.parametrize('strict', [True, False])
+    def test_generate_points_refuses_and_reports_it(self, monkeypatch, tmp_path, strict):
+        def broken(points, style):
+            raise ValueError('boom')
+
+        monkeypatch.setattr(cli, 'plan_points', broken)
+        result = mcp_server.generate_points(['One.'], output_dir=str(tmp_path), strict=strict)
+        assert not result['rendered']
+        assert result['problems'] == ['boom']
+        assert 'strict=false' not in result['hint']

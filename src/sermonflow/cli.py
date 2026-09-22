@@ -249,10 +249,17 @@ def preview_points(
 
 
 def points_fit(points: Sequence[str], style: str = DEFAULT_POINT_STYLE) -> bool:
-    """As `passage_fits`, for a deck: a known style, some text, and a plan that fits."""
+    """
+    As `passage_fits`, for a deck: a known style, some text, and a plan that fits.
+
+    Any ValueError means it does not fit -- the expected ones (overflow, no
+    text, unknown style) and an unforeseen one alike, since rendering would
+    raise it too. Nothing is hidden by that: validate_points has already put
+    the error's text in the problems.
+    """
     try:
         plan_points(points, style)
-    except (SlideOverflowError, EmptyVerseError, UnknownPointStyleError):
+    except ValueError:
         return False
     return True
 
