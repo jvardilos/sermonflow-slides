@@ -23,6 +23,7 @@ from conftest import (
 )
 from sermonflow import cli, mcp_server
 from sermonflow.cli import SKIP_MARKER
+from sermonflow.render import run_dir
 
 PASSAGE = [
     ('In the beginning was the word.', 'Book 1:1 ESV'),
@@ -368,3 +369,14 @@ class TestRunFolder:
         result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path))
         run = pathlib.Path(result['output_dir'])
         assert run.parent == tmp_path and self.STAMP.match(run.name)
+
+
+class TestRunFolderIsReserved:
+    def test_two_runs_in_the_same_second_get_different_folders(self, tmp_path):
+        # Without rendering in between, nothing has created the first folder,
+        # so a check-then-use would hand out the same path twice and the two
+        # decks would overwrite each other.
+        first = run_dir(str(tmp_path))
+        second = run_dir(str(tmp_path))
+        assert first != second
+        assert os.path.isdir(first) and os.path.isdir(second)

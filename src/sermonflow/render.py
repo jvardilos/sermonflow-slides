@@ -90,16 +90,24 @@ def run_dir(output_dir: str) -> str:
     were given, so a second run cannot overwrite the first, and a slide from an
     earlier run cannot stand in for a verse this one skipped. A counter is
     added if the stamp is taken -- two runs in the same second, or a rerun of
-    an old one. Not created here; render_deck makes it when it writes.
+    an old one.
+
+    The folder is created here, and exclusively: testing for it and then using
+    the name would hand the same path to two runs starting in the same second,
+    which is the collision this exists to prevent.
     """
     base = os.path.expanduser(output_dir)
+    os.makedirs(base, exist_ok=True)
     stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
-    candidate = os.path.join(base, stamp)
-    attempt = 2
-    while os.path.exists(candidate):
-        candidate = os.path.join(base, f"{stamp}-{attempt}")
-        attempt += 1
-    return candidate
+    for attempt in range(1, 100):
+        name = stamp if attempt == 1 else f"{stamp}-{attempt}"
+        candidate = os.path.join(base, name)
+        try:
+            os.mkdir(candidate)
+        except FileExistsError:
+            continue
+        return candidate
+    raise FileExistsError(f"no free run folder for {stamp} in {base}")
 
 
 def render_deck(slides: Sequence[Placed], output_dir: str = "./slides") -> list[str]:
