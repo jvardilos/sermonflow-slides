@@ -181,6 +181,14 @@ class TestRegistry:
         with pytest.raises(ValueError, match="unknown provider"):
             get_provider("some-nonsense")
 
+    def test_every_table_entry_can_resolve(self):
+        # get_provider lowercases its input, so a key with capitals -- or an
+        # alias aimed at a name that isn't a key -- would be dead on arrival.
+        from sermonflow.providers.registry import _ALIASES, PROVIDERS
+
+        assert all(name == name.lower() for name in [*PROVIDERS, *_ALIASES])
+        assert set(_ALIASES.values()) <= set(PROVIDERS)
+
     def test_provider_names_lists_the_canonical_backends(self):
         from sermonflow import provider_names
 
