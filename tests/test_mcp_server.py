@@ -254,3 +254,20 @@ class TestSkippedPoints:
         assert result['rendered'] and result['count'] == 2
         assert result['skipped'] == ['point 2']
         assert 'missing' in result['hint']
+
+
+class TestSkippedBlankVerse:
+    def test_a_blank_verse_is_reported_as_skipped(self, monkeypatch, tmp_path):
+        # Blank or too long, the deck is short a verse either way, so the
+        # result has to name it.
+        serve(monkeypatch, [
+            PASSAGE[0],
+            ('   ', 'Book 1:2 ESV'),
+            ('A third verse that fits.', 'Book 1:3 ESV'),
+        ])
+        result = mcp_server.generate_slides(
+            'Book 1', output_dir=str(tmp_path), strict=False
+        )
+        assert result['rendered'] and result['count'] == 2
+        assert result['skipped'] == ['Book 1:2 ESV']
+        assert 'missing' in result['hint']

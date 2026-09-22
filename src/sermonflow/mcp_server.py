@@ -153,7 +153,9 @@ def generate_slides(
     fits = True
     if problems:
         renders = {ref for ref, _ in preview_lines(verses)}
-        skipped = [ref for text, ref in verses if text.strip() and ref not in renders]
+        # Blank or too long, a verse that does not render is one the deck is
+        # short, so name it either way.
+        skipped = [ref for _, ref in verses if ref not in renders]
         fits = bool(renders)
     if problems and (strict or not fits):
         return {
