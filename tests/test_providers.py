@@ -162,9 +162,30 @@ class TestRegistry:
         with pytest.raises(ValueError, match=ESV_API_KEY_ENV):
             get_provider("esv-api")
 
+    @pytest.mark.parametrize(
+        "name,expected",
+        [
+            ("esv", EsvApiProvider),
+            ("esvapi", EsvApiProvider),
+            ("  ESV-API ", EsvApiProvider),
+            ("biblegateway", BibleGatewayProvider),
+            ("gateway", BibleGatewayProvider),
+            ("Bible-Gateway", BibleGatewayProvider),
+        ],
+    )
+    def test_aliases_and_spacing_resolve(self, monkeypatch, name, expected):
+        monkeypatch.setenv(ESV_API_KEY_ENV, "test-key-123")
+        assert isinstance(get_provider(name), expected)
+
     def test_unknown_provider_name_raises(self):
         with pytest.raises(ValueError, match="unknown provider"):
             get_provider("some-nonsense")
+
+    def test_unknown_provider_error_names_the_choices(self):
+        with pytest.raises(ValueError) as exc:
+            get_provider("some-nonsense")
+        assert "'esv-api'" in str(exc.value)
+        assert "'bible-gateway'" in str(exc.value)
 
     def test_both_providers_satisfy_the_protocol(self):
         assert isinstance(BibleGatewayProvider(), BibleProvider)
