@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "sermonflow-slides": {
+      "command": "sermonflow-mcp",
+      "type": "stdio",
+      "disabled": false,
+      "env": {}
+    }
+  }
+}
