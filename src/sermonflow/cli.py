@@ -63,9 +63,9 @@ def validate(verses: Sequence[Verse]) -> list[str]:
         try:
             layout_slide(text, ref)
         except EmptyVerseError:
-            problems.append(f"{ref}: empty, will be skipped")
+            problems.append(f"{ref}: empty, would be skipped")
         except SlideOverflowError as exc:
-            problems.append(f"{exc}; will be skipped")
+            problems.append(f"{exc}; would be skipped")
         else:
             renderable += 1
     if not renderable:
@@ -134,7 +134,10 @@ def _report_and_gate(
     if not fits():
         raise SystemExit(f"cannot render {what} as given; --no-strict will not help")
     if strict:
-        raise SystemExit("refusing to render; pass --no-strict to override")
+        raise SystemExit(
+            "refusing to render; pass --no-strict to override -- anything the "
+            "problems mark 'would be skipped' is left out"
+        )
 
 
 def passage_fits(verses: Sequence[Verse]) -> bool:
@@ -177,13 +180,14 @@ def build(
     if dry_run:
         # A verse too long for a slide is listed on stderr above and left out
         # here, as it will be from the render.
-        for ref, lines in preview_lines(verses):
+        preview = preview_lines(verses)
+        for ref, lines in preview:
             print(f"\n{ref}  ({len(lines)} lines)")
             for line in lines:
                 print(f"    {line}")
         # Exit non-zero when nothing would render, as a points dry run does,
         # so `-n && render` stops. A clean passage fits: validate() laid it out.
-        if problems and not passage_fits(verses):
+        if problems and not preview:
             raise SystemExit("cannot lay this passage out; see the problems above")
         return []
 
@@ -209,7 +213,7 @@ def validate_points(
     problems: list[str] = []
     for i, text in enumerate(points, 1):
         if not text.strip():
-            problems.append(f"point {i}: empty, will be skipped")
+            problems.append(f"point {i}: empty, would be skipped")
             continue
         for kind, snippet in find_unrenderable(text):
             problems.append(f"point {i}: {kind} {snippet}")
@@ -333,8 +337,9 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--no-strict",
         dest="strict",
         action="store_false",
-        help="render past validation warnings; content that cannot be laid out "
-        "is still refused",
+        help="render past validation warnings, leaving out anything the "
+        "problems mark 'would be skipped'; a passage or deck with nothing to "
+        "render is still refused",
     )
     args = parser.parse_args(argv)
 

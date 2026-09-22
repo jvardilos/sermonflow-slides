@@ -159,7 +159,9 @@ def generate_slides(
             continue
         try:
             slides.append(plan_verse(text, ref, index))
-        except SlideOverflowError:
+        except (EmptyVerseError, SlideOverflowError):
+            # Both are what validate() reports as "would be skipped", and
+            # preview_lines leaves out; the three must agree on what renders.
             continue
     return render_deck(slides, output_dir)
 

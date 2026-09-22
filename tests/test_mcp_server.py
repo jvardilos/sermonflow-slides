@@ -183,6 +183,10 @@ class TestOverflowingVerse:
         result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path))
         assert not result['rendered']
         assert 'strict=false' in result['hint']
+        # The hint tells the model to relay what will be left out, and to
+        # recognise it by the marker validate() writes.
+        assert 'would be skipped' in result['hint']
+        assert any('would be skipped' in problem for problem in result['problems'])
         assert os.listdir(tmp_path) == []
 
     def test_not_strict_renders_the_verses_that_fit(self, monkeypatch, tmp_path):
@@ -193,9 +197,18 @@ class TestOverflowingVerse:
             'Book_1_001.tif', 'Book_1_003.tif'
         ]
         assert any(
-            'Book 1:2 ESV' in problem and 'will be skipped' in problem
+            'Book 1:2 ESV' in problem and 'would be skipped' in problem
             for problem in result['problems']
         )
+        # The success result says so too: `problems` alone reads like a warning
+        # next to a count that looks complete.
+        assert result['skipped'] == ['Book 1:2 ESV']
+        assert 'missing' in result['hint']
+
+    def test_nothing_skipped_says_so(self, provider, tmp_path):
+        result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path))
+        assert result['rendered'] and result['skipped'] == []
+        assert 'hint' not in result
 
 
 class TestPreviewSlides:
@@ -231,3 +244,13 @@ class TestUnforeseenPlanningError:
         assert not result['rendered']
         assert result['problems'] == ['boom']
         assert 'strict=false' not in result['hint']
+
+
+class TestSkippedPoints:
+    def test_a_blank_point_is_reported_as_skipped(self, tmp_path):
+        result = mcp_server.generate_points(
+            ['One.', '   ', 'Three.'], output_dir=str(tmp_path), strict=False
+        )
+        assert result['rendered'] and result['count'] == 2
+        assert result['skipped'] == ['point 2']
+        assert 'missing' in result['hint']

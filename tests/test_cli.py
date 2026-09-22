@@ -1,10 +1,10 @@
 """
 The CLI's refusal messages.
 
---no-strict can render past what validation merely doubts, not past content
-that cannot be laid out. Offering it for the second sends the operator into a
-traceback (#20), so for that case the CLI has to exit with a reason instead --
-and for the first, --no-strict still has to render.
+--no-strict renders past what validation merely doubts, and leaves out a verse
+too long for a slide. It cannot force content with nothing to render: offering
+it for that sent the operator into a traceback (#20), so the CLI exits with a
+reason instead.
 """
 
 import os
@@ -77,6 +77,19 @@ class TestNoStrictStillRenders:
         with pytest.raises(SystemExit) as exc:
             build_points([GREEK], output_dir=str(tmp_path))
         assert 'pass --no-strict' in str(exc.value)
+
+    def test_strict_refuses_a_mixed_passage_and_offers_no_strict(self, tmp_path):
+        provider = serving(
+            ('The first verse fits.', 'Book 1:1 ESV'),
+            (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
+        )
+        with pytest.raises(SystemExit) as exc:
+            build('Book 1', output_dir=str(tmp_path), provider=provider)
+        # Not "--no-strict will not help": the rest of the passage renders.
+        assert 'pass --no-strict' in str(exc.value)
+        # And the operator is told the override drops something.
+        assert 'skipped' in str(exc.value)
+        assert os.listdir(tmp_path) == []
 
 
 class TestDryRun:

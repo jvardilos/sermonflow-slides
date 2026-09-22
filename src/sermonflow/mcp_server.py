@@ -39,7 +39,6 @@ from mcp.server import MCPServer
 
 from . import __version__
 from .cli import (
-    passage_fits,
     points_fit,
     prepare,
     preview_lines,
@@ -62,7 +61,12 @@ mcp = MCPServer("sermonflow-slides", version=__version__)
 #: next step is telling the user.
 _OVERRIDE_HINT = (
     "call again with strict=false to render anyway; anything the problems "
-    "mark 'will be skipped' is left out, so tell the user what is missing"
+    "mark 'would be skipped' is left out, so tell the user what is missing"
+)
+#: On a render that left something out. `count` alone reads like a full deck.
+_SKIPPED_HINT = (
+    "rendered, but `skipped` lists what never reached a slide -- tell the user "
+    "what is missing from the deck"
 )
 _POINTS_BLOCKED_HINT = (
     "these points cannot be laid out as given; change what the problems name "
@@ -142,8 +146,15 @@ def generate_slides(
     Returns the written paths, or the problems and a hint when it refuses.
     """
     verses, problems = prepare(reference, translation)
-    # validate() has already laid out every verse, so a clean passage fits.
-    fits = not problems or passage_fits(verses)
+    # One layout pass answers both questions: whether anything renders, and
+    # which verses with text the render will leave out. A clean passage needs
+    # neither -- validate() laid every verse out already.
+    skipped: list[str] = []
+    fits = True
+    if problems:
+        renders = {ref for ref, _ in preview_lines(verses)}
+        skipped = [ref for text, ref in verses if text.strip() and ref not in renders]
+        fits = bool(renders)
     if problems and (strict or not fits):
         return {
             "reference": reference,
@@ -157,14 +168,19 @@ def generate_slides(
     # stdio is the protocol stream.
     output_dir = _resolve_dir(output_dir)
     paths = _render_slides(verses, output_dir=output_dir, formatted=True)
-    return {
+    result: dict[str, Any] = {
         "reference": reference,
         "rendered": True,
         "count": len(paths),
         "paths": paths,
         "output_dir": output_dir,
         "problems": problems,
+        "skipped": skipped,
     }
+    if skipped:
+        # `count` on its own reads like a complete deck.
+        result["hint"] = _SKIPPED_HINT
+    return result
 
 
 @mcp.tool()
@@ -271,14 +287,20 @@ def generate_points(
     # As in generate_slides: the renderer directly, so nothing reaches stdout.
     output_dir = _resolve_dir(output_dir)
     paths = _render_points(points, output_dir=output_dir, style=style)
-    return {
+    # The renderer drops blank entries, so say which never reached a slide.
+    skipped = [f"point {i}" for i, text in enumerate(points, 1) if not text.strip()]
+    result: dict[str, Any] = {
         "style": style,
         "rendered": True,
         "count": len(paths),
         "paths": paths,
         "output_dir": output_dir,
         "problems": problems,
+        "skipped": skipped,
     }
+    if skipped:
+        result["hint"] = _SKIPPED_HINT
+    return result
 
 
 def main() -> None:
