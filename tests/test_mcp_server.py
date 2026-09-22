@@ -162,6 +162,42 @@ class TestStrictHint:
         assert 'strict=false' not in result['hint']
 
 
+def mixed_passage():
+    """Three verses, the middle one too long for any slide."""
+    return [
+        PASSAGE[0],
+        (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
+        ('A third verse that fits.', 'Book 1:3 ESV'),
+    ]
+
+
+class TestOverflowingVerse:
+    """
+    A verse too long for a slide is skipped rather than sinking the chapter.
+    strict=True still refuses, as it does for any problem; strict=False renders
+    every verse that fits and names the one it left out.
+    """
+
+    def test_strict_refuses_and_offers_strict_false(self, monkeypatch, tmp_path):
+        serve(monkeypatch, mixed_passage())
+        result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path))
+        assert not result['rendered']
+        assert 'strict=false' in result['hint']
+        assert os.listdir(tmp_path) == []
+
+    def test_not_strict_renders_the_verses_that_fit(self, monkeypatch, tmp_path):
+        serve(monkeypatch, mixed_passage())
+        result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path), strict=False)
+        assert result['rendered']
+        assert sorted(os.path.basename(path) for path in result['paths']) == [
+            'Book_1_001.tif', 'Book_1_003.tif'
+        ]
+        assert any(
+            'Book 1:2 ESV' in problem and 'will be skipped' in problem
+            for problem in result['problems']
+        )
+
+
 class TestPreviewSlides:
     def test_a_verse_too_long_is_reported_not_raised(self, monkeypatch):
         serve(monkeypatch, [(dummy_text(OVERFLOW_WORDS), 'Book 1:1 ESV')])
@@ -169,11 +205,7 @@ class TestPreviewSlides:
         assert any('Book 1:1 ESV' in problem for problem in result['problems'])
 
     def test_the_verses_that_fit_are_still_previewed(self, monkeypatch):
-        serve(monkeypatch, [
-            PASSAGE[0],
-            (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
-            ('A third verse that fits.', 'Book 1:3 ESV'),
-        ])
+        serve(monkeypatch, mixed_passage())
         result = mcp_server.preview_slides('Book 1')
         assert [slide['reference'] for slide in result['slides']] == [
             'Book 1:1 ESV', 'Book 1:3 ESV'

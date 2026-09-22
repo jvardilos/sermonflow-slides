@@ -52,6 +52,7 @@ def validate(verses: Sequence[Verse]) -> list[str]:
     Returns a list of human-readable problem strings; empty means clean.
     """
     problems: list[str] = []
+    renderable = 0
     for text, ref in verses:
         for kind, snippet in find_artifacts(text):
             problems.append(f"{ref}: {kind} {snippet!r}")
@@ -64,8 +65,10 @@ def validate(verses: Sequence[Verse]) -> list[str]:
         except EmptyVerseError:
             problems.append(f"{ref}: empty, will be skipped")
         except SlideOverflowError as exc:
-            problems.append(str(exc))
-    if not any(text.strip() for text, _ in verses):
+            problems.append(f"{exc}; will be skipped")
+        else:
+            renderable += 1
+    if not renderable:
         # Skipping every verse -- or having none -- would render nothing.
         problems.append("no renderable verses")
     return problems
@@ -88,26 +91,19 @@ def prepare(
     return verses, validate(verses)
 
 
-def preview_lines(
-    verses: Sequence[Verse], skip_overflow: bool = False
-) -> list[tuple[str, list[str]]]:
+def preview_lines(verses: Sequence[Verse]) -> list[tuple[str, list[str]]]:
     """
-    (reference, wrapped_lines) per non-empty verse -- the dry-run view.
+    (reference, wrapped_lines) per verse that will render -- the dry-run view.
 
-    A verse too long for a slide raises SlideOverflowError, unless
-    `skip_overflow` is set: then it is left out, for a caller that reports it
-    from validate()'s problems instead and still wants the rest.
+    Empty verses and verses too long for a slide are left out, as the renderer
+    leaves them out; validate() is what reports them.
     """
     out: list[tuple[str, list[str]]] = []
     for text, ref in verses:
         try:
             lines, _, _ = layout_slide(text, ref)
-        except EmptyVerseError:
+        except (EmptyVerseError, SlideOverflowError):
             continue
-        except SlideOverflowError:
-            if skip_overflow:
-                continue
-            raise
         out.append((ref, lines))
     return out
 
@@ -123,7 +119,7 @@ def _report_and_gate(
     """
     Print validation problems to stderr, then exit if rendering must not go on.
 
-    Content that cannot be laid out is refused whatever --no-strict says;
+    Content that cannot render at all is refused whatever --no-strict says;
     anything else is refused only under strict. `fits` is called only when
     there are problems and files would be written, since it lays the content
     out again.
@@ -143,17 +139,14 @@ def _report_and_gate(
 
 def passage_fits(verses: Sequence[Verse]) -> bool:
     """
-    Whether the passage can be rendered at all: every verse lays out on a slide
-    and at least one has text.
+    Whether the passage renders anything: at least one verse has text and fits
+    on a slide.
 
-    This is the line --no-strict (strict=false over MCP) cannot cross. Other
-    problems are doubts the renderer can draw past; these make it raise, or
-    render nothing.
+    This is the line --no-strict (strict=false over MCP) cannot cross. A verse
+    too long for a slide is skipped like an empty one, so --no-strict renders
+    the rest; a passage where nothing fits would render nothing.
     """
-    try:
-        return bool(preview_lines(verses))
-    except SlideOverflowError:
-        return False
+    return bool(preview_lines(verses))
 
 
 def build(
@@ -182,14 +175,14 @@ def build(
     )
 
     if dry_run:
-        # A verse too long for a slide is already listed on stderr above;
-        # leave it out rather than let it hide the verses that do fit.
-        for ref, lines in preview_lines(verses, skip_overflow=True):
+        # A verse too long for a slide is listed on stderr above and left out
+        # here, as it will be from the render.
+        for ref, lines in preview_lines(verses):
             print(f"\n{ref}  ({len(lines)} lines)")
             for line in lines:
                 print(f"    {line}")
-        # Then exit non-zero, as a points dry run does, so `-n && render`
-        # stops here. A clean passage fits: validate() laid it all out.
+        # Exit non-zero when nothing would render, as a points dry run does,
+        # so `-n && render` stops. A clean passage fits: validate() laid it out.
         if problems and not passage_fits(verses):
             raise SystemExit("cannot lay this passage out; see the problems above")
         return []

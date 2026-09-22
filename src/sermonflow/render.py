@@ -9,7 +9,8 @@ verse slide, a rolling point deck, or a slide type nobody has written yet
 without knowing the difference. The scrim is the one piece of artwork it owns.
 
 `generate_slides` and `generate_points` run a whole passage or a whole list of
-points, skipping blank entries so one empty item cannot abort a batch.
+points, skipping blank entries so one empty item cannot abort a batch. A
+passage also skips a verse too long for any slide.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from .layouts import (
     TEXT_BOX_WIDTH,
     EmptyVerseError,
     Placed,
+    SlideOverflowError,
     get_point_style,
     plan_verse,
     slide_stem,
@@ -135,9 +137,10 @@ def generate_slides(
     """
     Render a whole passage.
 
-    Verses with no renderable text are skipped rather than raising, so one
-    blank entry in a passage cannot abort the batch. Compare len(result) with
-    len(verses) to detect skips.
+    Verses with no renderable text, or too long for a slide, are skipped
+    rather than raising, so one bad entry in a passage cannot abort the batch.
+    validate() reports both kinds before rendering; compare len(result) with
+    len(verses) to detect skips here.
 
     Args:
         verses: list of (verse_text, reference) pairs, in order.
@@ -154,7 +157,10 @@ def generate_slides(
     for index, (text, ref) in enumerate(prepared, 1):
         if not text.strip():
             continue
-        slides.append(plan_verse(text, ref, index))
+        try:
+            slides.append(plan_verse(text, ref, index))
+        except SlideOverflowError:
+            continue
     return render_deck(slides, output_dir)
 
 

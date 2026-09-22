@@ -13,6 +13,8 @@ which looks like output but is not. find_unrenderable exists to catch that
 before anything reaches a screen.
 """
 
+import os
+
 import pytest
 
 import sermonflow as slidegen
@@ -336,10 +338,12 @@ class TestBulkMixedInput:
         paths = slidegen.generate_slides(verses, output_dir=str(tmp_path))
         assert len(paths) == 4
 
-    def test_overflowing_verse_still_raises_in_a_batch(self, tmp_path):
+    def test_overflowing_verse_is_skipped_in_a_batch(self, tmp_path):
+        # Like a blank verse: one slide that cannot fit does not abort the
+        # passage. validate() is what reports it.
         verses = [
             ('Fine.', 'Book 1:1 ESV'),
             (dummy_text(OVERFLOW_WORDS, seed=2), 'Book 1:2 ESV'),
         ]
-        with pytest.raises(slidegen.SlideOverflowError, match='Book 1:2 ESV'):
-            slidegen.generate_slides(verses, output_dir=str(tmp_path))
+        paths = slidegen.generate_slides(verses, output_dir=str(tmp_path))
+        assert [os.path.basename(path) for path in paths] == ['Book_1_001.tif']

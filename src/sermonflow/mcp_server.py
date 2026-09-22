@@ -53,13 +53,17 @@ from .render import generate_points as _render_points, generate_slides as _rende
 mcp = MCPServer("sermonflow-slides", version=__version__)
 
 #: Refusal hints. strict=false draws past what validation merely doubts -- a
-#: stray marker, a character with no glyph -- but content that cannot be laid
-#: out makes the renderer raise (or render nothing) whatever strict says, so
-#: offering strict=false for it would send the model into a failing retry.
-#: Points are the caller's own words, so the problems say what to change.
-#: Scripture is fetched and cannot be edited -- and the ESV API ignores the
-#: translation -- so for a passage the honest next step is telling the user.
-_OVERRIDE_HINT = "call again with strict=false to render anyway"
+#: stray marker, a character with no glyph -- and leaves out a verse too long
+#: for a slide. But content with nothing to render makes the renderer raise (or
+#: render nothing) whatever strict says, so offering strict=false for it would
+#: send the model into a failing retry. Points are the caller's own words, so
+#: the problems say what to change. Scripture is fetched and cannot be edited
+#: -- and the ESV API ignores the translation -- so for a passage the honest
+#: next step is telling the user.
+_OVERRIDE_HINT = (
+    "call again with strict=false to render anyway; anything the problems "
+    "mark 'will be skipped' is left out, so tell the user which"
+)
 _POINTS_BLOCKED_HINT = (
     "these points cannot be laid out as given; change what the problems name "
     "-- changing strict will not help"
@@ -99,13 +103,9 @@ def preview_slides(
     Returns the per-verse wrapped lines and any validation problems.
     """
     verses, problems = prepare(reference, translation)
-    # A verse too long for a slide is left out here and reported in
-    # `problems` (validate() laid it out too), so one overlong verse does not
-    # hide the preview of every verse that fits.
-    slides = [
-        {"reference": ref, "lines": lines}
-        for ref, lines in preview_lines(verses, skip_overflow=True)
-    ]
+    # A verse too long for a slide is left out here, as generate_slides leaves
+    # it out, and reported in `problems`.
+    slides = [{"reference": ref, "lines": lines} for ref, lines in preview_lines(verses)]
     return {
         "reference": reference,
         # Every verse with text, including any left out of `slides` above.
@@ -134,9 +134,10 @@ def generate_slides(
         translation: version code (default ESV; ignored by the ESV API backend).
         output_dir: folder to write the TIFF slides into (created if missing).
         strict: when True, refuse to render if validation finds any problem and
-            return those problems instead of writing files. A passage that
-            cannot be laid out -- a verse too long for a slide, or no text at
-            all -- is refused either way.
+            return those problems instead of writing files. When False, a
+            verse too long for a slide is skipped (the problems name it) and
+            the rest render. A passage where nothing fits, or with no text at
+            all, is refused either way.
 
     Returns the written paths, or the problems and a hint when it refuses.
     """

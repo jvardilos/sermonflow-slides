@@ -65,6 +65,14 @@ class TestNoStrictStillRenders:
         paths = build('Book 1', output_dir=str(tmp_path), strict=False, provider=provider)
         assert len(paths) == 1 and os.path.isfile(paths[0])
 
+    def test_passage_with_an_overlong_verse_renders_the_rest(self, tmp_path):
+        provider = serving(
+            ('The first verse fits.', 'Book 1:1 ESV'),
+            (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
+        )
+        paths = build('Book 1', output_dir=str(tmp_path), strict=False, provider=provider)
+        assert [os.path.basename(path) for path in paths] == ['Book_1_001.tif']
+
     def test_strict_still_refuses_and_offers_no_strict(self, tmp_path):
         with pytest.raises(SystemExit) as exc:
             build_points([GREEK], output_dir=str(tmp_path))
@@ -78,14 +86,18 @@ class TestDryRun:
             (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
             ('The third verse fits.', 'Book 1:3 ESV'),
         )
-        # Exits non-zero, as a points dry run does, so `-n && render` stops --
-        # but only after previewing the verses that fit.
-        with pytest.raises(SystemExit) as exc:
-            build('Book 1', dry_run=True, provider=provider)
-        assert exc.value.code not in (None, 0)
+        # The rest of the passage renders (with --no-strict), so the dry run
+        # previews it and exits 0; the overlong verse is listed on stderr.
+        assert build('Book 1', dry_run=True, provider=provider) == []
         captured = capsys.readouterr()
         assert 'Book 1:1 ESV' in captured.out and 'Book 1:3 ESV' in captured.out
         assert 'Book 1:2 ESV' in captured.err
+
+    def test_a_passage_where_nothing_fits_exits_non_zero(self):
+        provider = serving((dummy_text(OVERFLOW_WORDS), 'Book 1:1 ESV'))
+        with pytest.raises(SystemExit) as exc:
+            build('Book 1', dry_run=True, provider=provider)
+        assert exc.value.code not in (None, 0)
 
     def test_a_passage_with_no_verses_exits_non_zero(self):
         with pytest.raises(SystemExit) as exc:
