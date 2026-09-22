@@ -371,7 +371,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         "-n",
         "--dry-run",
         action="store_true",
-        help="print wrapped lines instead of rendering",
+        help="print wrapped lines instead of rendering, then exit as the "
+        "render would, so `-n && render` predicts it",
     )
     parser.add_argument(
         "--no-strict",
