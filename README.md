@@ -86,6 +86,9 @@ tool's description says so explicitly and points at the other, and
 — rolling or centered?) so the model can ask with real options rather than
 guess.
 
+For a host-neutral setup guide, including the included Codex plugin manifest,
+see [MCP portability](docs/MCP_PORTABILITY.md).
+
 ### Two transports — pick by where the model runs
 
 ```bash
@@ -172,7 +175,7 @@ sermonflow-mcp --http --host 0.0.0.0 --port 8000     # serves MCP at http://<hos
 handshake, tool list and a real call, run it as a client — the OpenAI Agents SDK
 snippet above does exactly that, or use the `mcp` SDK's `stdio_client` +
 `ClientSession` to `initialize()`, `list_tools()`, and `call_tool(...)`. A
-correct server reports name `sermonflow-slides`, version `0.2.0`, and both tools
+correct server reports name `sermonflow-slides`, version `0.3.0`, and all five tools
 with their schemas.
 
 ---
@@ -482,7 +485,7 @@ The repo ships a `.vscode/` so the editor "just works":
 ### Building a distributable
 
 ```bash
-./deps/bin/python -m pip wheel . --no-deps -w dist     # -> dist/sermonflow_slides-0.2.0-*.whl
+./deps/bin/python -m pip wheel . --no-deps -w dist     # -> dist/sermonflow_slides-0.3.0-*.whl
 ```
 
 Install that wheel anywhere (or `pipx install .`) to put the `sermonflow` and

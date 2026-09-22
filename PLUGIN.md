@@ -1,86 +1,43 @@
-# SermonFlow Slides Plugin
+# SermonFlow Slides
 
-Generate beautiful ProPresenter sermon slides directly from Claude—extract verses and points from your sermon documents automatically, then render them with intelligent typography.
+Generate 1920×1080 ProPresenter-ready sermon slides from Scripture references
+or supplied sermon points. SermonFlow runs as a standard local MCP server, so
+it can be connected to any compatible LLM host.
 
-## What It Does
+## What it does
 
-- **Upload sermon documents** (Word or PDF) → Claude extracts yellow-highlighted verses and points
-- **Ask for verses naturally** → "Give me all of Romans 8" → slides generated instantly
-- **Automatic rendering** → Respects ProPresenter bounds, handles text wrapping, applies sermon point styling
-- **Organized output** → All slides saved to a dated folder on your Desktop
+- Fetches a Scripture passage by reference and creates one TIFF slide per verse
+- Creates rolling outline or centered-statement slides from sermon points
+- Previews wrapping and validation results before writing slide files
+- Uses the ESV API when `ESV_API_KEY` is configured, with BibleGateway as a
+  zero-configuration fallback
 
-## Installation
+## Install
 
-### Prerequisites
+Install the package with Python 3.11 or later:
 
-- Claude desktop app with plugin support
-- SermonFlow Slides package installed on your system:
-  ```bash
-  pip install sermonflow-slides
-  ```
-
-### Add the Plugin
-
-1. Download the `.plugin` file
-2. Open Claude desktop app → Settings → Plugins
-3. Click "Add Plugin" and select the `.plugin` file
-4. Claude will extract and enable the plugin
-
-## Usage
-
-### From a Sermon Document
-
-1. Upload your sermon Word doc or PDF to Claude
-2. Claude will automatically extract highlighted content
-3. Confirm the verses/points look right
-4. Slides render and save to `Desktop/sermonflow-slides-[date]/`
-
-### From Natural Language
-
-Just ask:
-- "Generate slides for Romans 8"
-- "Make me a slide deck of 1 John 1-3"
-- "Create sermon point slides for: Jesus is Lord, He rose from death, We are redeemed"
-
-## Highlight Rules
-
-- **Yellow highlights** in your document = content to extract
-- **Verses** (text with book names like "John", "Romans") → rendered as verse slides (one per verse)
-- **Points** (your own text/phrases) → rendered as sermon points with bold emphasis
-- Plain text (non-highlighted) is ignored
-
-## Output
-
-Slides are saved to:
-```
-~/Desktop/sermonflow-slides-YYYY-MM-DD_HH-MM/
+```bash
+python3 -m venv deps
+./deps/bin/pip install .
 ```
 
-Each slide is a ProPresenter-ready PNG file ready to import.
+Register `./deps/bin/sermonflow-mcp` as a stdio MCP server in your preferred
+LLM host. A portable configuration example is in
+[`docs/MCP_PORTABILITY.md`](docs/MCP_PORTABILITY.md).
 
-## Supported Bible Versions
+## Use
 
-- ESV (English Standard Version, default)
-- Other versions available—ask Claude to specify a different one
+Ask the connected host to preview first, then render to an explicit directory:
 
-## Troubleshooting
+- “Preview John 17.”
+- “Generate slides for Romans 8 to `/path/to/sunday-slides`.”
+- “Create rolling point slides: Jesus is Lord; He rose from death; We are redeemed.”
 
-**"I can't extract highlights from this PDF"**
-- Try uploading as a Word document instead
-- Or paste the verses/points directly as text
+The server exposes `preview_slides`, `generate_slides`, `preview_points`,
+`generate_points`, and `list_layouts`.
 
-**"The text doesn't fit on the slide"**
-- The code automatically wraps text to fit. If it's too crowded, break your content into smaller chunks (fewer verses per slide, shorter points).
+## Current scope
 
-**"Where did my slides go?"**
-- Check `~/Desktop/` for a folder named `sermonflow-slides-[date-time]/`
-
-## Tips
-
-- **One yellow highlight per idea** → Cleaner extraction and more usable slides
-- **Serif fonts for verses, sans-serif for points** → Already built in; no configuration needed
-- **Presets for different point styles** → Available as you level up; ask Claude what's available
-
-## Questions or Issues?
-
-Reach out to Jacob Vardi or your church tech team.
+Slides are written as ProPresenter-ready TIFF files. This package currently
+does not read Word/PDF files or extract highlighted text from them; pass a
+Scripture reference or the sermon-point text directly.

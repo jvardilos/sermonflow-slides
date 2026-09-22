@@ -1,7 +1,7 @@
 {
   "name": "sermonflow-slides",
-  "version": "0.2.0",
-  "description": "Generate ProPresenter-ready sermon slides from scripture verses or points with intelligent yellow-highlight extraction",
+  "version": "0.3.0",
+  "description": "Generate ProPresenter-ready sermon slides from Scripture references or supplied sermon points",
   "author": {
     "name": "Jacob Vardi",
     "email": "jacob.pixel7a@gmail.com"
