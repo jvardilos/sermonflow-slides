@@ -11,7 +11,16 @@ import os
 
 import pytest
 
+from conftest import (
+    GREEK,
+    OVERFLOW_WORDS,
+    TOO_MANY_POINTS,
+    CountingProvider,
+    dummy_text,
+    needs_greek_flagged,
+)
 from sermonflow import cli, mcp_server
+from sermonflow.cli import SKIP_MARKER
 
 PASSAGE = [
     ('In the beginning was the word.', 'Book 1:1 ESV'),
@@ -19,22 +28,16 @@ PASSAGE = [
 ]
 
 
-class CountingProvider:
-    """A provider that serves PASSAGE and counts how often it is asked."""
-
-    def __init__(self):
-        self.calls = 0
-
-    def fetch_chapter(self, reference, translation='ESV'):
-        self.calls += 1
-        return list(PASSAGE)
+def serve(monkeypatch, passage=PASSAGE):
+    """Make `passage` what every fetch returns, and hand back the provider."""
+    fake = CountingProvider(passage)
+    monkeypatch.setattr(cli, 'get_default_provider', lambda: fake)
+    return fake
 
 
 @pytest.fixture
 def provider(monkeypatch):
-    fake = CountingProvider()
-    monkeypatch.setattr(cli, 'get_default_provider', lambda: fake)
-    return fake
+    return serve(monkeypatch)
 
 
 class TestNothingOnStdout:
@@ -74,3 +77,260 @@ class TestReportedPaths:
         result = mcp_server.generate_points(['One.'], output_dir='~/deck')
         assert result['output_dir'] == str(tmp_path / 'deck')
         assert os.path.isfile(result['paths'][0])
+
+
+class TestStrictHint:
+    """
+    strict=false can draw past a doubtful character, but not past content that
+    does not fit. A refusal has to say which of the two it is, or following its
+    hint sends the model into an exception (#20).
+    """
+
+    def test_points_that_do_not_fit_are_refused_even_when_not_strict(self, tmp_path):
+        result = mcp_server.generate_points(
+            TOO_MANY_POINTS, output_dir=str(tmp_path), strict=False
+        )
+        assert not result['rendered']
+        assert os.listdir(tmp_path) == []
+
+    def test_no_strict_false_hint_for_points_that_do_not_fit(self, tmp_path):
+        result = mcp_server.generate_points(TOO_MANY_POINTS, output_dir=str(tmp_path))
+        assert 'strict=false' not in result['hint']
+        assert os.listdir(tmp_path) == []
+
+    @needs_greek_flagged
+    def test_strict_false_hint_for_points_that_would_render(self, tmp_path):
+        result = mcp_server.generate_points([GREEK], output_dir=str(tmp_path))
+        assert not result['rendered']
+        assert 'strict=false' in result['hint']
+        # Nothing is dropped here, so the hint must not promise a `skipped`
+        # list to relay.
+        assert result['skipped'] == []
+        assert 'skipped' not in result['hint']
+        forced = mcp_server.generate_points([GREEK], output_dir=str(tmp_path), strict=False)
+        assert forced['rendered']
+
+    def test_verse_that_does_not_fit_is_refused_even_when_not_strict(
+        self, monkeypatch, tmp_path
+    ):
+        serve(monkeypatch, [(dummy_text(OVERFLOW_WORDS), 'Book 1:1 ESV')])
+        result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path), strict=False)
+        assert not result['rendered']
+        assert 'strict=false' not in result['hint']
+        # The ESV API ignores the translation, so suggesting one would be
+        # another failing retry; the verses themselves can't be edited.
+        assert 'translation' not in result['hint']
+        assert 'tell the user' in result['hint']
+        assert os.listdir(tmp_path) == []
+
+    def test_passage_with_no_verses_is_refused(self, monkeypatch, tmp_path):
+        # Nothing to validate is not the same as nothing wrong.
+        serve(monkeypatch, [])
+        result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path), strict=False)
+        assert not result['rendered']
+        assert result['problems']
+        assert os.listdir(tmp_path) == []
+
+    def test_unknown_style_is_named_even_when_every_point_is_blank(self, tmp_path):
+        result = mcp_server.generate_points(['  ', ''], style='sideways', output_dir=str(tmp_path))
+        assert any('sideways' in problem for problem in result['problems'])
+
+    @needs_greek_flagged
+    def test_strict_false_hint_for_a_passage_that_would_render(self, monkeypatch, tmp_path):
+        serve(monkeypatch, [(GREEK, 'Book 1:1 ESV')])
+        result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path))
+        assert not result['rendered']
+        assert 'strict=false' in result['hint']
+        forced = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path), strict=False)
+        assert forced['rendered'] and forced['count'] == 1
+
+    def test_passage_with_no_text_is_refused_even_when_not_strict(self, monkeypatch, tmp_path):
+        # Every verse empty: rendering would "succeed" with zero slides.
+        serve(monkeypatch, [('   ', 'Book 1:1 ESV'), ('', 'Book 1:2 ESV')])
+        result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path), strict=False)
+        assert not result['rendered']
+        assert 'strict=false' not in result['hint']
+        assert os.listdir(tmp_path) == []
+
+    @pytest.mark.parametrize(
+        'points,style',
+        [(['  ', '\n'], 'stacked'), (['One.'], 'sideways')],
+        ids=['no-text', 'unknown-style'],
+    )
+    def test_decks_that_cannot_plan_are_refused_even_when_not_strict(
+        self, points, style, tmp_path
+    ):
+        result = mcp_server.generate_points(
+            points, style=style, output_dir=str(tmp_path), strict=False
+        )
+        assert not result['rendered']
+        assert 'strict=false' not in result['hint']
+
+
+def mixed_passage():
+    """Three verses, the middle one too long for any slide."""
+    return [
+        PASSAGE[0],
+        (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
+        ('A third verse that fits.', 'Book 1:3 ESV'),
+    ]
+
+
+class TestOverflowingVerse:
+    """
+    A verse too long for a slide is skipped rather than sinking the chapter.
+    strict=True still refuses, as it does for any problem; strict=False renders
+    every verse that fits and names the one it left out.
+    """
+
+    def test_strict_refuses_and_offers_strict_false(self, monkeypatch, tmp_path):
+        serve(monkeypatch, mixed_passage())
+        result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path))
+        assert not result['rendered']
+        assert 'strict=false' in result['hint']
+        # The hint tells the model to relay what will be left out, and to
+        # recognise it by the marker validate() writes.
+        assert SKIP_MARKER in result['hint']
+        assert any(SKIP_MARKER in problem for problem in result['problems'])
+        # The refusal names them too, so the model need not read prose.
+        assert result['skipped'] == ['Book 1:2 ESV']
+        assert os.listdir(tmp_path) == []
+
+    def test_not_strict_renders_the_verses_that_fit(self, monkeypatch, tmp_path):
+        serve(monkeypatch, mixed_passage())
+        result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path), strict=False)
+        assert result['rendered']
+        assert sorted(os.path.basename(path) for path in result['paths']) == [
+            'Book_1_001.tif', 'Book_1_003.tif'
+        ]
+        assert any(
+            'Book 1:2 ESV' in problem and SKIP_MARKER in problem
+            for problem in result['problems']
+        )
+        # The success result says so too: `problems` alone reads like a warning
+        # next to a count that looks complete.
+        assert result['skipped'] == ['Book 1:2 ESV']
+        assert 'missing' in result['hint']
+
+    def test_nothing_skipped_says_so(self, provider, tmp_path):
+        result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path))
+        assert result['rendered'] and result['skipped'] == []
+        assert 'hint' not in result
+
+
+class TestPreviewSlides:
+    def test_a_verse_too_long_is_reported_not_raised(self, monkeypatch):
+        serve(monkeypatch, [(dummy_text(OVERFLOW_WORDS), 'Book 1:1 ESV')])
+        result = mcp_server.preview_slides('Book 1')
+        assert any('Book 1:1 ESV' in problem for problem in result['problems'])
+
+    def test_the_preview_names_what_will_be_left_out(self, monkeypatch):
+        serve(monkeypatch, mixed_passage())
+        result = mcp_server.preview_slides('Book 1')
+        # "The safe look before committing files" has to say a verse will go
+        # missing, not leave the model to diff counts or read prose.
+        assert result['skipped'] == ['Book 1:2 ESV']
+
+    def test_counts_reconcile_with_a_blank_verse(self, monkeypatch):
+        serve(monkeypatch, [
+            ('Short.', 'Book 1:1 ESV'),
+            ('   ', 'Book 1:2 ESV'),
+        ])
+        result = mcp_server.preview_slides('Book 1')
+        # A model doing the obvious arithmetic must not invent a missing verse.
+        assert len(result['slides']) + len(result['skipped']) == result['verse_count']
+
+    def test_two_verses_with_one_reference_do_not_hide_a_skip(self, monkeypatch):
+        # A skip is positional: a shared reference must not make it invisible.
+        serve(monkeypatch, [
+            ('Short.', 'Book 1:1 ESV'),
+            (dummy_text(OVERFLOW_WORDS), 'Book 1:1 ESV'),
+        ])
+        result = mcp_server.preview_slides('Book 1')
+        assert result['skipped'] == ['Book 1:1 ESV']
+
+    def test_the_verses_that_fit_are_still_previewed(self, monkeypatch):
+        serve(monkeypatch, mixed_passage())
+        result = mcp_server.preview_slides('Book 1')
+        assert [slide['reference'] for slide in result['slides']] == [
+            'Book 1:1 ESV', 'Book 1:3 ESV'
+        ]
+        # The chapter still has three verses; only the previews skip one.
+        assert result['verse_count'] == 3
+
+
+class TestUnforeseenPlanningError:
+    """
+    If planning raises a ValueError nobody anticipated, validation reports it
+    and rendering would raise it too -- so the tool refuses, whatever strict
+    says, instead of failing with the exception.
+    """
+
+    @pytest.mark.parametrize('strict', [True, False])
+    def test_generate_points_refuses_and_reports_it(self, monkeypatch, tmp_path, strict):
+        def broken(points, style):
+            raise ValueError('boom')
+
+        monkeypatch.setattr(cli, 'plan_points', broken)
+        result = mcp_server.generate_points(['One.'], output_dir=str(tmp_path), strict=strict)
+        assert not result['rendered']
+        assert result['problems'] == ['boom']
+        assert 'strict=false' not in result['hint']
+
+
+class TestSkippedPoints:
+    def test_the_refusal_names_the_blank_point(self, tmp_path):
+        # The hint points at `skipped`, so the refusal has to carry it.
+        result = mcp_server.generate_points(
+            ['One.', '   ', 'Three.'], output_dir=str(tmp_path)
+        )
+        assert not result['rendered']
+        assert result['skipped'] == ['point 2']
+
+    def test_the_preview_names_the_blank_point(self):
+        result = mcp_server.preview_points(['One.', '   ', 'Three.'])
+        assert result['skipped'] == ['point 2']
+
+    def test_a_blank_point_is_reported_as_skipped(self, tmp_path):
+        result = mcp_server.generate_points(
+            ['One.', '   ', 'Three.'], output_dir=str(tmp_path), strict=False
+        )
+        assert result['rendered'] and result['count'] == 2
+        assert result['skipped'] == ['point 2']
+        assert 'missing' in result['hint']
+
+
+class TestBlockedDeck:
+    """
+    Nothing reaches a slide, so `skipped` must not name one blank entry and
+    imply the rest arrived -- the hints call it the list of what is missing.
+    """
+
+    def test_preview_lists_every_point(self):
+        result = mcp_server.preview_points(TOO_MANY_POINTS)
+        assert result['slides'] == []
+        assert result['skipped'] == [f'point {i}' for i in range(1, 13)]
+
+    def test_refusal_lists_every_point(self, tmp_path):
+        result = mcp_server.generate_points(
+            [*TOO_MANY_POINTS, '  '], output_dir=str(tmp_path), strict=False
+        )
+        assert not result['rendered']
+        assert len(result['skipped']) == 13
+
+
+class TestSkippedBlankVerse:
+    def test_a_blank_verse_is_reported_as_skipped(self, monkeypatch, tmp_path):
+        # Blank or too long, the deck is short a verse either way, so the
+        # result has to name it.
+        serve(monkeypatch, [
+            PASSAGE[0],
+            ('   ', 'Book 1:2 ESV'),
+            ('A third verse that fits.', 'Book 1:3 ESV'),
+        ])
+        result = mcp_server.generate_slides(
+            'Book 1', output_dir=str(tmp_path), strict=False
+        )
+        assert result['rendered'] and result['count'] == 2
+        assert result['skipped'] == ['Book 1:2 ESV']
+        assert 'missing' in result['hint']

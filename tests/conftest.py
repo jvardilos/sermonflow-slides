@@ -111,3 +111,33 @@ def prose_corpus():
 def prose_styles():
     """Varied real-world prose registers, keyed by the structure they stress."""
     return dict(PROSE_STYLES)
+
+
+# -- Inputs for the MCP tool and CLI tests ------------------------------------
+
+#: Twelve one-line points: rolling runs past the safe area at this length.
+TOO_MANY_POINTS = [f'Point number {i}.' for i in range(12)]
+
+#: No glyph in the typeface for the Greek, so validation objects -- but it
+#: still draws, which is what makes it the override case for strict=false.
+GREEK = 'Grace, χάρις, is a gift.'
+
+#: For tests that rely on GREEK being flagged. Only the bundled face, inspected
+#: with fontTools, is known to lack Greek, so skip anywhere it isn't flagged --
+#: as the glyph-coverage tests in test_edge_cases do.
+needs_greek_flagged = pytest.mark.skipif(
+    not slidegen.find_unrenderable(GREEK),
+    reason='font in use draws Greek, or its charset cannot be inspected',
+)
+
+
+class CountingProvider:
+    """A BibleProvider that serves a fixed passage and counts its fetches."""
+
+    def __init__(self, passage):
+        self.passage = list(passage)
+        self.calls = 0
+
+    def fetch_chapter(self, reference, translation='ESV'):
+        self.calls += 1
+        return list(self.passage)

@@ -123,12 +123,16 @@ def point_style_names() -> list[str]:
     return list(POINT_STYLES)
 
 
+class UnknownPointStyleError(ValueError):
+    """Raised for a style name that is not in POINT_STYLES."""
+
+
 def get_point_style(name: str) -> PointStyle:
-    """Look a style up by name, or raise ValueError naming the valid ones."""
+    """Look a style up by name, or raise UnknownPointStyleError naming the valid ones."""
     try:
         return POINT_STYLES[name]
     except KeyError:
-        raise ValueError(
+        raise UnknownPointStyleError(
             f"unknown point style {name!r}; choose from "
             f"{', '.join(point_style_names())}"
         ) from None

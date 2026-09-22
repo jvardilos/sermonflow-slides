@@ -122,7 +122,8 @@ Validation problems come in three kinds:
   `strict=False` renders anyway.
 - **A verse too long for one slide.** `strict=True` refuses; `strict=False`
   renders the rest of the passage and leaves that verse out. The problem says
-  `will be skipped`, and the hint tells Claude to name the verse to the user.
+  `would be skipped`, the result's `skipped` field names it, and the hint tells
+  Claude to say what is missing from the deck.
 - **Nothing to render**: points that run past the safe area, no text, or a
   passage where no verse fits. These are refused either way, and the hint says
   so, so Claude doesn't retry something that can't work.

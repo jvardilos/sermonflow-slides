@@ -9,7 +9,8 @@ verse slide, a rolling point deck, or a slide type nobody has written yet
 without knowing the difference. The scrim is the one piece of artwork it owns.
 
 `generate_slides` and `generate_points` run a whole passage or a whole list of
-points, skipping blank entries so one empty item cannot abort a batch.
+points, skipping blank entries so one empty item cannot abort a batch. A
+passage also skips a verse too long for any slide.
 """
 
 from __future__ import annotations
@@ -29,6 +30,7 @@ from .layouts import (
     TEXT_BOX_WIDTH,
     EmptyVerseError,
     Placed,
+    SlideOverflowError,
     get_point_style,
     plan_verse,
     slide_stem,
@@ -135,9 +137,13 @@ def generate_slides(
     """
     Render a whole passage.
 
-    Verses with no renderable text are skipped rather than raising, so one
-    blank entry in a passage cannot abort the batch. Compare len(result) with
-    len(verses) to detect skips.
+    Verses with no renderable text, or too long for a slide, are skipped
+    rather than raising, so one bad entry in a passage cannot abort the batch.
+    validate() reports both kinds before rendering, and cli.renderable_verses
+    names them; the paths returned here say only what was written. If verses
+    were given and none of them render, that is not a skip but an empty deck,
+    and it raises EmptyVerseError -- a caller with no validation of its own
+    would otherwise get an empty directory and no signal.
 
     Args:
         verses: list of (verse_text, reference) pairs, in order.
@@ -152,9 +158,17 @@ def generate_slides(
 
     slides: list[Placed] = []
     for index, (text, ref) in enumerate(prepared, 1):
-        if not text.strip():
+        try:
+            slides.append(plan_verse(text, ref, index))
+        except (EmptyVerseError, SlideOverflowError):
+            # One rule, one place: blank text raises EmptyVerseError, so there
+            # is no separate blank check. Both are what validate() marks
+            # "would be skipped" and renderable_verses leaves out.
             continue
-        slides.append(plan_verse(text, ref, index))
+    if prepared and not slides:
+        raise EmptyVerseError(
+            "no renderable verses: every verse was empty or too long for a slide"
+        )
     return render_deck(slides, output_dir)
 
 
