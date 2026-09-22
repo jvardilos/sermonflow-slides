@@ -191,7 +191,8 @@ def generate_points(
     Args:
         points: the statements, in the order they should appear.
         output_dir: created if missing.
-        style: "rolling" (accumulating reveal) or "centered" (one per slide).
+        style: "rolling" (accumulating reveal), "centered" (one per slide) or
+            "stacked" (an entry's paragraphs on one slide).
             See sermonflow.layouts.POINT_STYLES.
         stem: filename stem; slides are `<stem>_001.tif` and up.
 

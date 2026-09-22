@@ -1,13 +1,16 @@
 """
 Point slides: short statements, no reference line, set in Medium Italic.
 
-Two styles, both measured off template/point-templates/:
+Three styles. The first two are measured off template/point-templates/:
 
   rolling   -- a list that accumulates. One slide per point, each showing every
                point up to that one at a fixed position, so playing the slides
                in order reads as the points being revealed one at a time.
   centered  -- one statement per slide, its block centered on the canvas and
                snapped to the grid, which lands it slightly above true centre.
+
+The third, `stacked`, is measured off a later hand-made deck and keeps its own
+constants; see the Stacked section below.
 
 What the templates gave up, and where each number below comes from:
 
@@ -210,7 +213,7 @@ def stacked_blocks(paragraphs: Sequence[Sequence[str]]) -> tuple[list[int], int]
 
 def plan_stacked(points: Sequence[str], stem: str = "point") -> list[Placed]:
     """
-    One standalone slide per entry, centred, with blank-line-separated
+    One standalone slide per entry, centred, with its newline-separated
     paragraphs stacked on it.
 
     Unlike `rolling`, nothing accumulates: each slide stands alone. Unlike

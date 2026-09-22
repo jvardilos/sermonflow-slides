@@ -9,7 +9,7 @@ the layout has to change, which is the same shape as providers/.
 
   base   -- canvas, grid, scrim, the Placed/DrawOp IR
   verse  -- wrapped passage with its reference underneath
-  points -- short statements, two styles
+  points -- short statements, three styles
 
 The registry is deliberately over point *styles* rather than over layouts in
 general. Verse slides take (text, reference) pairs and point slides take plain
@@ -81,9 +81,10 @@ class PointStyle(NamedTuple):
     """
     A named way of laying points out.
 
-    `summary` is not decoration: it is the text the CLI's help and the MCP tool
-    description are built from, so a style added here explains itself to a
-    model without anyone editing mcp_server.py.
+    `summary` is not decoration: it is what the MCP server's list_layouts tool
+    returns, so a style added here explains itself to a model without anyone
+    editing mcp_server.py. The tool descriptions and the CLI's --style help are
+    written by hand and still need the new style added to them.
     """
 
     name: str

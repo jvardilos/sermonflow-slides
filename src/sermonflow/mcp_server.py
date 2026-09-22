@@ -179,8 +179,10 @@ def preview_points(
             N points produce N slides and slide N shows points 1..N. Use it for
             an outline the speaker walks through. "centered" gives each point
             its own slide, centered on the canvas -- use it for a single
-            statement meant to land on its own. Call list_layouts for the
-            current set.
+            statement meant to land on its own. "stacked" also gives each
+            entry its own slide, but splits the entry on newlines into
+            paragraphs stacked on that slide -- a lie above its truth, or a
+            short list of steps. Call list_layouts for the current set.
 
     Returns one entry per slide it would render, with the wrapped lines, plus
     any validation problems.
@@ -218,7 +220,8 @@ def generate_points(
 
     Args:
         points: the statements, in the order they should appear on screen.
-        style: "rolling" (default) or "centered"; see list_layouts.
+        style: "rolling" (default), "centered" or "stacked"; see
+            preview_points and list_layouts.
         output_dir: folder to write the TIFF slides into (created if missing).
         strict: when True, refuse to render if validation finds any problem and
             return those problems instead of writing files.
