@@ -140,6 +140,10 @@ class TestPointTypography:
         placed = slidegen.plan_rolling(ROLLING_POINTS)[-1]
         assert {op.left for op in placed.ops} == {slidegen.LEFT_MARGIN}
 
+    def test_centered_shares_the_margin(self):
+        placed = slidegen.plan_centered(["A statement long enough to wrap onto a second line."])[0]
+        assert {op.left for op in placed.ops} == {slidegen.LEFT_MARGIN}
+
     def test_wraps_wider_than_the_verse_box(self):
         # Measured: point lines in the templates run out to the scrim's
         # legible limit, past where a verse would have broken.
@@ -251,8 +255,8 @@ class TestPointStyleRegistry:
         assert slidegen.DEFAULT_POINT_STYLE in slidegen.POINT_STYLES
 
     def test_every_style_has_a_summary(self):
-        # The summaries are what the CLI help and the MCP tool description are
-        # built from, so an unexplained style is a bug.
+        # The summaries are what list_layouts hands the model, so an
+        # unexplained style is a bug.
         for style in slidegen.POINT_STYLES.values():
             assert len(style.summary) > 20
 
@@ -263,6 +267,13 @@ class TestPointStyleRegistry:
 
     def test_lookup_returns_the_planner(self):
         assert slidegen.get_point_style("rolling").plan is slidegen.plan_rolling
+
+    @pytest.mark.parametrize("style", slidegen.point_style_names())
+    def test_every_style_numbers_its_slides_from_one(self, style):
+        deck = slidegen.plan_points(["One.", "Two.", "Three."], style, stem="outline")
+        assert [placed.stem for placed in deck] == [
+            "outline_001", "outline_002", "outline_003"
+        ]
 
 
 class TestRenderPoints:
