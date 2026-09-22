@@ -13,7 +13,7 @@ from __future__ import annotations
 from .base import DEFAULT_TRANSLATION, BibleProvider
 from .bible_gateway import BibleGatewayProvider, parse_chapter
 from .esv_api import EsvApiProvider, parse_passage_text
-from .registry import get_default_provider, get_provider
+from .registry import get_default_provider, get_provider, provider_names
 
 __all__ = [
     "DEFAULT_TRANSLATION",
@@ -24,4 +24,5 @@ __all__ = [
     "get_provider",
     "parse_chapter",
     "parse_passage_text",
+    "provider_names",
 ]

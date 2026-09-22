@@ -80,12 +80,19 @@ def block_height(num_lines: int) -> int:
     return (num_lines - 1) * LINE_HEIGHT + CAP_HEIGHT
 
 
-def _ops(lines: Sequence[str], top: int) -> tuple[DrawOp, ...]:
-    """Draw ops for one point's lines, starting at ink top `top`."""
+def _ops(
+    lines: Sequence[str], top: int, left: int = LEFT_MARGIN
+) -> tuple[DrawOp, ...]:
+    """Draw ops for one block of lines, starting at ink top `top`."""
     return tuple(
-        DrawOp(line, LEFT_MARGIN, top + i * LINE_HEIGHT, POINT_WEIGHT)
+        DrawOp(line, left, top + i * LINE_HEIGHT, POINT_WEIGHT)
         for i, line in enumerate(lines)
     )
+
+
+def _stem(stem: str, number: int) -> str:
+    """Filename stem for the slide numbered `number` (1-based): "point_001"."""
+    return f"{stem}_{number:03d}"
 
 
 # ---------------------------------------------------------------------------
@@ -128,12 +135,12 @@ def plan_rolling(points: Sequence[str], stem: str = "point") -> list[Placed]:
                 f"shorten them or split the list across two decks"
             )
 
+    # Each slide is the previous one plus the next point.
     slides: list[Placed] = []
-    for i in range(len(wrapped)):
-        ops: tuple[DrawOp, ...] = ()
-        for lines, top in zip(wrapped[: i + 1], tops[: i + 1]):
-            ops += _ops(lines, top)
-        slides.append(Placed(ops, f"{stem}_{i + 1:03d}"))
+    ops: tuple[DrawOp, ...] = ()
+    for number, (lines, top) in enumerate(zip(wrapped, tops), 1):
+        ops += _ops(lines, top)
+        slides.append(Placed(ops, _stem(stem, number)))
     return slides
 
 
@@ -163,7 +170,7 @@ def plan_centered(points: Sequence[str], stem: str = "point") -> list[Placed]:
             raise SlideOverflowError(
                 f"point {i} needs {len(lines)} lines, more than a slide holds"
             )
-        slides.append(Placed(_ops(lines, top), f"{stem}_{i:03d}"))
+        slides.append(Placed(_ops(lines, top), _stem(stem, i)))
     return slides
 
 
@@ -238,9 +245,6 @@ def plan_stacked(points: Sequence[str], stem: str = "point") -> list[Placed]:
             )
         ops: tuple[DrawOp, ...] = ()
         for lines, top in zip(paragraphs, tops):
-            ops += tuple(
-                DrawOp(line, STACK_LEFT_MARGIN, top + k * LINE_HEIGHT, POINT_WEIGHT)
-                for k, line in enumerate(lines)
-            )
-        slides.append(Placed(ops, f"{stem}_{i:03d}"))
+            ops += _ops(lines, top, STACK_LEFT_MARGIN)
+        slides.append(Placed(ops, _stem(stem, i)))
     return slides

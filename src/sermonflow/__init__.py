@@ -104,6 +104,7 @@ from .layouts import (
     Placed as Placed,
     PointStyle as PointStyle,
     SlideOverflowError as SlideOverflowError,
+    UnknownPointStyleError as UnknownPointStyleError,
     _scrim_limit as _scrim_limit,
     block_fits as block_fits,
     block_height as block_height,
@@ -148,6 +149,7 @@ from .providers import (
     EsvApiProvider as EsvApiProvider,
     get_default_provider as get_default_provider,
     get_provider as get_provider,
+    provider_names as provider_names,
 )
 
 __version__ = "0.2.0"
