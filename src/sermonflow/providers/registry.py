@@ -51,9 +51,9 @@ _ALIASES: dict[str, str] = {
 }
 
 
-def provider_names() -> str:
-    """The canonical backend names, quoted, for help text and errors."""
-    return " or ".join(repr(known) for known in PROVIDERS)
+def provider_names() -> list[str]:
+    """Canonical backend names, for help text and errors."""
+    return list(PROVIDERS)
 
 
 def get_default_provider() -> BibleProvider:
@@ -70,5 +70,6 @@ def get_provider(name: str) -> BibleProvider:
     normalized = name.strip().lower()
     factory = PROVIDERS.get(_ALIASES.get(normalized, normalized))
     if factory is None:
-        raise ValueError(f"unknown provider {name!r}; use {provider_names()}")
+        choices = " or ".join(repr(known) for known in provider_names())
+        raise ValueError(f"unknown provider {name!r}; use {choices}")
     return factory()

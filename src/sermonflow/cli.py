@@ -28,6 +28,7 @@ from .layouts import (
     DEFAULT_POINT_STYLE,
     EmptyVerseError,
     SlideOverflowError,
+    UnknownPointStyleError,
     find_overlong_reference,
     get_point_style,
     layout_slide,
@@ -114,6 +115,7 @@ def preview_lines(
 def _report_and_gate(
     problems: Sequence[str],
     fits: Callable[[], bool],
+    *,
     strict: bool,
     dry_run: bool,
     what: str,
@@ -172,15 +174,17 @@ def build(
     """
     verses, problems = prepare(reference, translation, provider)
     _report_and_gate(
-        problems, lambda: passage_fits(verses), strict, dry_run, "this passage"
+        problems,
+        lambda: passage_fits(verses),
+        strict=strict,
+        dry_run=dry_run,
+        what="this passage",
     )
 
     if dry_run:
-        try:
-            preview = preview_lines(verses)
-        except SlideOverflowError as exc:
-            raise SystemExit(f"cannot lay this passage out: {exc}") from None
-        for ref, lines in preview:
+        # A verse too long for a slide is already listed on stderr above;
+        # leave it out rather than let it hide the verses that do fit.
+        for ref, lines in preview_lines(verses, skip_overflow=True):
             print(f"\n{ref}  ({len(lines)} lines)")
             for line in lines:
                 print(f"    {line}")
@@ -220,9 +224,9 @@ def validate_points(
         # check the style too -- or fixing the points just uncovers it.
         try:
             get_point_style(style)
-        except ValueError as exc:
+        except UnknownPointStyleError as exc:
             problems.append(str(exc))
-    except (SlideOverflowError, ValueError) as exc:
+    except (SlideOverflowError, UnknownPointStyleError) as exc:
         problems.append(str(exc))
     return problems
 
@@ -239,11 +243,9 @@ def preview_points(
 
 def points_fit(points: Sequence[str], style: str = DEFAULT_POINT_STYLE) -> bool:
     """As `passage_fits`, for a deck: a known style, some text, and a plan that fits."""
-    if style not in point_style_names():
-        return False
     try:
         plan_points(points, style)
-    except (SlideOverflowError, EmptyVerseError):
+    except (SlideOverflowError, EmptyVerseError, UnknownPointStyleError):
         return False
     return True
 
@@ -258,7 +260,11 @@ def build_points(
     """Validate and render a list of points. Mirrors `build`."""
     problems = validate_points(points, style)
     _report_and_gate(
-        problems, lambda: points_fit(points, style), strict, dry_run, "these points"
+        problems,
+        lambda: points_fit(points, style),
+        strict=strict,
+        dry_run=dry_run,
+        what="these points",
     )
 
     if dry_run:
@@ -308,7 +314,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         "-p",
         "--provider",
         default=None,
-        help=f"force a backend: {provider_names()} (default: auto)",
+        help=f"force a backend: {' or '.join(provider_names())} (default: auto)",
     )
     parser.add_argument(
         "-n",
@@ -320,7 +326,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         "--no-strict",
         dest="strict",
         action="store_false",
-        help="render even if validation reports problems",
+        help="render past validation warnings; content that cannot be laid out "
+        "is still refused",
     )
     args = parser.parse_args(argv)
 

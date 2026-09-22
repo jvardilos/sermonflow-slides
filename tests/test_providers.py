@@ -181,6 +181,11 @@ class TestRegistry:
         with pytest.raises(ValueError, match="unknown provider"):
             get_provider("some-nonsense")
 
+    def test_provider_names_lists_the_canonical_backends(self):
+        from sermonflow.providers import provider_names
+
+        assert provider_names() == ["esv-api", "bible-gateway"]
+
     def test_unknown_provider_error_names_the_choices(self):
         with pytest.raises(ValueError) as exc:
             get_provider("some-nonsense")

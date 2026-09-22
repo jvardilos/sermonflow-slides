@@ -28,7 +28,9 @@ class TestContentThatCannotBeLaidOut:
     def test_points_refusal_does_not_offer_no_strict(self, tmp_path):
         with pytest.raises(SystemExit) as exc:
             build_points(TOO_MANY_POINTS, output_dir=str(tmp_path))
+        assert 'will not help' in str(exc.value)
         assert 'pass --no-strict' not in str(exc.value)
+        assert os.listdir(tmp_path) == []
 
     def test_passage_exits_with_a_reason_even_without_strict(self, tmp_path):
         provider = serving((dummy_text(OVERFLOW_WORDS), 'Book 1:1 ESV'))
@@ -58,3 +60,16 @@ class TestNoStrictStillRenders:
         with pytest.raises(SystemExit) as exc:
             build_points([GREEK], output_dir=str(tmp_path))
         assert 'pass --no-strict' in str(exc.value)
+
+
+class TestDryRun:
+    def test_a_verse_too_long_does_not_hide_the_rest(self, capsys):
+        provider = serving(
+            ('The first verse fits.', 'Book 1:1 ESV'),
+            (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
+            ('The third verse fits.', 'Book 1:3 ESV'),
+        )
+        assert build('Book 1', dry_run=True, provider=provider) == []
+        captured = capsys.readouterr()
+        assert 'Book 1:1 ESV' in captured.out and 'Book 1:3 ESV' in captured.out
+        assert 'Book 1:2 ESV' in captured.err

@@ -56,16 +56,18 @@ mcp = MCPServer("sermonflow-slides", version=__version__)
 #: stray marker, a character with no glyph -- but content that cannot be laid
 #: out makes the renderer raise (or render nothing) whatever strict says, so
 #: offering strict=false for it would send the model into a failing retry.
-#: Points are the caller's own words, so the problems say what to change;
-#: Scripture is fetched, so the way out is a different passage or translation.
+#: Points are the caller's own words, so the problems say what to change.
+#: Scripture is fetched and cannot be edited -- and the ESV API ignores the
+#: translation -- so for a passage the honest next step is telling the user.
 _OVERRIDE_HINT = "call again with strict=false to render anyway"
 _POINTS_BLOCKED_HINT = (
     "these points cannot be laid out as given; change what the problems name "
     "-- changing strict will not help"
 )
 _PASSAGE_BLOCKED_HINT = (
-    "this passage cannot be laid out as it stands; try another reference or "
-    "translation -- changing strict will not help"
+    "this passage cannot be laid out on these slides as it stands, and "
+    "changing strict will not help; tell the user which verses the problems "
+    "name"
 )
 
 

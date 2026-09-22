@@ -88,6 +88,7 @@ class TestStrictHint:
     def test_no_strict_false_hint_for_points_that_do_not_fit(self, tmp_path):
         result = mcp_server.generate_points(TOO_MANY_POINTS, output_dir=str(tmp_path))
         assert 'strict=false' not in result['hint']
+        assert os.listdir(tmp_path) == []
 
     def test_strict_false_hint_for_points_that_would_render(self, tmp_path):
         result = mcp_server.generate_points([GREEK], output_dir=str(tmp_path))
@@ -103,8 +104,10 @@ class TestStrictHint:
         result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path), strict=False)
         assert not result['rendered']
         assert 'strict=false' not in result['hint']
-        # Scripture is fetched, not typed: the way out is another passage.
-        assert 'translation' in result['hint']
+        # The ESV API ignores the translation, so suggesting one would be
+        # another failing retry; the verses themselves can't be edited.
+        assert 'translation' not in result['hint']
+        assert 'tell the user' in result['hint']
         assert os.listdir(tmp_path) == []
 
     def test_passage_with_no_verses_is_refused(self, monkeypatch, tmp_path):

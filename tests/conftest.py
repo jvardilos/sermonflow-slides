@@ -127,7 +127,7 @@ class CountingProvider:
     """A BibleProvider that serves a fixed passage and counts its fetches."""
 
     def __init__(self, passage):
-        self.passage = passage
+        self.passage = list(passage)
         self.calls = 0
 
     def fetch_chapter(self, reference, translation='ESV'):
