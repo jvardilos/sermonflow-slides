@@ -140,7 +140,10 @@ def generate_slides(
     Verses with no renderable text, or too long for a slide, are skipped
     rather than raising, so one bad entry in a passage cannot abort the batch.
     validate() reports both kinds before rendering, and cli.renderable_verses
-    names them; the paths returned here say only what was written.
+    names them; the paths returned here say only what was written. If verses
+    were given and none of them render, that is not a skip but an empty deck,
+    and it raises EmptyVerseError -- a caller with no validation of its own
+    would otherwise get an empty directory and no signal.
 
     Args:
         verses: list of (verse_text, reference) pairs, in order.
@@ -162,6 +165,10 @@ def generate_slides(
             # is no separate blank check. Both are what validate() marks
             # "would be skipped" and renderable_verses leaves out.
             continue
+    if prepared and not slides:
+        raise EmptyVerseError(
+            "no renderable verses: every verse was empty or too long for a slide"
+        )
     return render_deck(slides, output_dir)
 
 

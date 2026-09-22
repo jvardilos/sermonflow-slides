@@ -48,6 +48,15 @@ class TestEmptyAndBlank:
         assert len(paths) == 2
         assert not any('002' in p or '003' in p for p in paths)
 
+    def test_a_batch_that_renders_nothing_raises(self, tmp_path):
+        # Skipping one verse of several is fine; a deck of nothing is not, and
+        # a library caller has no validate() to warn it.
+        with pytest.raises(slidegen.EmptyVerseError):
+            slidegen.generate_slides(
+                [('', 'Book 1:1 ESV'), ('   ', 'Book 1:2 ESV')],
+                output_dir=str(tmp_path),
+            )
+
     def test_punctuation_only_is_not_treated_as_empty(self):
         lines, _, _ = slidegen.layout_slide('...---', REF)
         assert lines == ['...---']

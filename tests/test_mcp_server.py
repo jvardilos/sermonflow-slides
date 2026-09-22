@@ -300,6 +300,25 @@ class TestSkippedPoints:
         assert 'missing' in result['hint']
 
 
+class TestBlockedDeck:
+    """
+    Nothing reaches a slide, so `skipped` must not name one blank entry and
+    imply the rest arrived -- the hints call it the list of what is missing.
+    """
+
+    def test_preview_lists_every_point(self):
+        result = mcp_server.preview_points(TOO_MANY_POINTS)
+        assert result['slides'] == []
+        assert result['skipped'] == [f'point {i}' for i in range(1, 13)]
+
+    def test_refusal_lists_every_point(self, tmp_path):
+        result = mcp_server.generate_points(
+            [*TOO_MANY_POINTS, '  '], output_dir=str(tmp_path), strict=False
+        )
+        assert not result['rendered']
+        assert len(result['skipped']) == 13
+
+
 class TestSkippedBlankVerse:
     def test_a_blank_verse_is_reported_as_skipped(self, monkeypatch, tmp_path):
         # Blank or too long, the deck is short a verse either way, so the

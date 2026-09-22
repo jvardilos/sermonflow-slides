@@ -118,7 +118,11 @@ def preview_slides(
         reference: book and chapter, e.g. "John 17" or "1 John 4".
         translation: version code (default ESV; ignored by the ESV API backend).
 
-    Returns the per-verse wrapped lines and any validation problems.
+    Returns `slides` (the wrapped lines per verse that will render),
+    `skipped` (references of the verses that will not -- blank, or too long for
+    a slide), `verse_count` for the whole chapter, and any validation problems.
+    A non-empty `skipped` means the deck would come out short of those verses:
+    say so before rendering.
     """
     verses, problems = prepare(reference, translation)
     # A verse too long for a slide is left out of `slides`, as generate_slides
@@ -159,7 +163,8 @@ def generate_slides(
             the rest render. A passage where nothing fits, or with no text at
             all, is refused either way.
 
-    Returns the written paths, or the problems and a hint when it refuses.
+    Returns the written paths plus `skipped` (references that never reached a
+    slide), or the problems, `skipped` and a hint when it refuses.
     """
     verses, problems = prepare(reference, translation)
     # One layout pass answers both questions: whether anything renders, and
@@ -247,7 +252,8 @@ def preview_points(
             short list of steps. Call list_layouts for the current set.
 
     Returns one entry per slide it would render, with the wrapped lines, plus
-    any validation problems.
+    `skipped` (labels of the points that will not reach a slide) and any
+    validation problems.
     """
     problems = validate_points(points, style)
     try:
@@ -257,12 +263,13 @@ def preview_points(
         ]
     except ValueError:
         # Whatever made planning impossible is already in `problems`:
-        # validate_points ran the same plan and recorded it.
+        # validate_points ran the same plan and recorded it. Nothing will
+        # render, so every point is missing, not just the blank ones.
         return {
             "style": style,
             "slide_count": 0,
             "slides": [],
-            "skipped": skipped_points(points),
+            "skipped": skipped_points(points, blocked=True),
             "problems": problems,
         }
     return {
@@ -296,12 +303,15 @@ def generate_points(
             return those problems instead of writing files. Points that cannot
             be laid out at all are refused either way.
 
-    Returns the written paths, or the problems and a hint when it refuses.
+    Returns the written paths plus `skipped` (labels of the points that never
+    reached a slide -- the blank ones), or the problems, `skipped` and a hint
+    when it refuses.
     """
     problems = validate_points(points, style)
     # validate_points has already planned the deck, so a clean deck fits.
     fits = not problems or points_fit(points, style)
-    skipped = skipped_points(points) if problems else []
+    # Blocked: nothing renders, so every point is missing, not just the blanks.
+    skipped = skipped_points(points, blocked=not fits) if problems else []
     if problems and (strict or not fits):
         return {
             "style": style,
@@ -314,8 +324,6 @@ def generate_points(
     # As in generate_slides: the renderer directly, so nothing reaches stdout.
     output_dir = _resolve_dir(output_dir)
     paths = _render_points(points, output_dir=output_dir, style=style)
-    # The renderer drops blank entries, so say which never reached a slide.
-    skipped = skipped_points(points)
     result: dict[str, Any] = {
         "style": style,
         "rendered": True,

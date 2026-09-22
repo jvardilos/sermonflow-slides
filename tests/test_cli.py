@@ -65,19 +65,6 @@ class TestNoStrictStillRenders:
         paths = build('Book 1', output_dir=str(tmp_path), strict=False, provider=provider)
         assert len(paths) == 1 and os.path.isfile(paths[0])
 
-    def test_passage_with_an_overlong_verse_renders_the_rest(self, tmp_path, capsys):
-        provider = serving(
-            ('The first verse fits.', 'Book 1:1 ESV'),
-            (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
-        )
-        paths = build('Book 1', output_dir=str(tmp_path), strict=False, provider=provider)
-        assert [os.path.basename(path) for path in paths] == ['Book_1_001.tif']
-        # "Rendered 1 slides" alone hides the missing verse; the summary names
-        # it, as the MCP caller's `skipped` does. (The problems on stderr
-        # scroll past and are easy to redirect away.)
-        summary = capsys.readouterr().out
-        assert 'Book 1:2 ESV' in summary and 'skipped' in summary.lower()
-
     def test_strict_refusal_mentions_skipping_only_when_something_is_skipped(
         self, tmp_path
     ):
@@ -93,6 +80,26 @@ class TestNoStrictStillRenders:
             build_points([GREEK], output_dir=str(tmp_path))
         assert 'pass --no-strict' in str(exc.value)
 
+
+class TestOverflowingPassage:
+    """
+    No Greek in these, so they must not sit under @needs_greek_flagged: they
+    are the CLI half of "render the rest, and say what was left out".
+    """
+
+    def test_passage_with_an_overlong_verse_renders_the_rest(self, tmp_path, capsys):
+        provider = serving(
+            ('The first verse fits.', 'Book 1:1 ESV'),
+            (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
+        )
+        paths = build('Book 1', output_dir=str(tmp_path), strict=False, provider=provider)
+        assert [os.path.basename(path) for path in paths] == ['Book_1_001.tif']
+        # "Rendered 1 slides" alone hides the missing verse; the summary names
+        # it, as the MCP caller's `skipped` does. (The problems on stderr
+        # scroll past and are easy to redirect away.)
+        summary = capsys.readouterr().out
+        assert 'Book 1:2 ESV' in summary and 'skipped' in summary.lower()
+
     def test_strict_refuses_a_mixed_passage_and_offers_no_strict(self, tmp_path):
         provider = serving(
             ('The first verse fits.', 'Book 1:1 ESV'),
@@ -105,6 +112,27 @@ class TestNoStrictStillRenders:
         # And the operator is told the override drops something.
         assert 'skipped' in str(exc.value)
         assert os.listdir(tmp_path) == []
+
+
+class TestSkippedSummary:
+    def test_points_name_what_was_dropped(self, tmp_path, capsys):
+        paths = build_points(
+            ['One.', '   ', 'Three.'], output_dir=str(tmp_path), strict=False
+        )
+        assert len(paths) == 2
+        # --no-strict's help promises this for "a passage or deck".
+        summary = capsys.readouterr().out
+        assert 'point 2' in summary and 'skipped' in summary.lower()
+
+    def test_dry_run_names_what_the_render_would_drop(self, capsys):
+        provider = serving(
+            ('The first verse fits.', 'Book 1:1 ESV'),
+            (dummy_text(OVERFLOW_WORDS), 'Book 1:2 ESV'),
+        )
+        build('Book 1', dry_run=True, strict=False, provider=provider)
+        # A dry run predicts the render, summary included.
+        summary = capsys.readouterr().out
+        assert 'Book 1:2 ESV' in summary and 'skipped' in summary.lower()
 
 
 class TestDryRun:
