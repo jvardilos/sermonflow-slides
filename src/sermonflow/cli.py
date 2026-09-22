@@ -155,10 +155,13 @@ def _refuse(
     if not fits():
         raise SystemExit(f"cannot render {what} as given; --no-strict will not help")
     if strict:
-        raise SystemExit(
-            "refusing to render; pass --no-strict to override -- anything the "
-            f"problems mark '{SKIP_MARKER}' is left out"
+        drops = any(SKIP_MARKER in problem for problem in problems)
+        cost = (
+            f" -- anything the problems mark '{SKIP_MARKER}' is left out"
+            if drops
+            else ""
         )
+        raise SystemExit(f"refusing to render; pass --no-strict to override{cost}")
 
 
 def passage_fits(verses: Sequence[Verse]) -> bool:
@@ -211,10 +214,16 @@ def build(
         _refuse(problems, lambda: bool(preview), strict=strict, what="this passage")
         return []
 
-    _refuse(problems, lambda: passage_fits(verses), strict=strict, what="this passage")
+    skipped: list[str] = []
+    if problems:
+        # The same pass answers "does anything render" and "what is left out".
+        previews, skipped = renderable_verses(verses)
+        _refuse(problems, lambda: bool(previews), strict=strict, what="this passage")
 
     paths = generate_slides(verses, output_dir=output_dir, formatted=True)
     print(f"Rendered {len(paths)} slides to {output_dir}")
+    if skipped:
+        print(f"Skipped {len(skipped)}: {', '.join(skipped)}")
     return paths
 
 
@@ -235,7 +244,7 @@ def validate_points(
     problems: list[str] = []
     for i, text in enumerate(points, 1):
         if not text.strip():
-            problems.append(f"point {i}: empty, would be skipped")
+            problems.append(f"point {i}: empty, {SKIP_MARKER}")
             continue
         for kind, snippet in find_unrenderable(text):
             problems.append(f"point {i}: {kind} {snippet}")
@@ -255,6 +264,16 @@ def validate_points(
         # problem rather than a crash. points_fit stays narrow instead.
         problems.append(str(exc))
     return problems
+
+
+def skipped_points(points: Sequence[str]) -> list[str]:
+    """
+    Labels of the points the renderer will drop -- the blank ones.
+
+    plan_points filters on the same rule; this names what it dropped, the way
+    renderable_verses does for a passage.
+    """
+    return [f"point {i}" for i, text in enumerate(points, 1) if not text.strip()]
 
 
 def preview_points(
@@ -308,7 +327,8 @@ def build_points(
                 print(f"    {line}")
         # Planning succeeded, so the deck fits; refuse on strict as the render
         # would, so a dry run predicts it.
-        _refuse(problems, lambda: True, strict=strict, what="these points")
+        _refuse(problems, lambda: points_fit(points, style), strict=strict,
+                what="these points")
         return []
 
     _refuse(problems, lambda: points_fit(points, style), strict=strict, what="these points")
@@ -358,7 +378,7 @@ def main(argv: Sequence[str] | None = None) -> None:
         dest="strict",
         action="store_false",
         help="render past validation warnings, leaving out anything the "
-        "problems mark 'would be skipped'; a passage or deck with nothing to "
+        f"problems mark '{SKIP_MARKER}'; a passage or deck with nothing to "
         "render is still refused",
     )
     args = parser.parse_args(argv)

@@ -209,7 +209,7 @@ with their schemas.
 | `-o`, `--output-dir` | where slides land (default `./slides`) |
 | `-t`, `--translation` | version code (default `ESV`) |
 | `-p`, `--provider` | force `esv-api` or `bible-gateway` (default: auto) |
-| `-n`, `--dry-run` | print wrapped lines, render nothing |
+| `-n`, `--dry-run` | print wrapped lines, render nothing; exits non-zero when the render would refuse, so `-n && render` predicts it |
 | `--no-strict` | render past validation warnings, leaving out anything marked `would be skipped`; a passage with nothing to render is still refused |
 | `--points` | render these statements as point slides instead of a chapter |
 | `--style` | point layout: `rolling` (default) or `centered` |

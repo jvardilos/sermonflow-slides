@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import os
+from collections.abc import Sequence
 from typing import Any
 
 from mcp.server import MCPServer
@@ -44,6 +45,7 @@ from .cli import (
     prepare,
     preview_points as _preview_points,
     renderable_verses,
+    skipped_points,
     validate_points,
 )
 from .layouts import DEFAULT_POINT_STYLE, POINT_STYLES
@@ -60,7 +62,10 @@ mcp = MCPServer("sermonflow-slides", version=__version__)
 #: the problems say what to change. Scripture is fetched and cannot be edited
 #: -- and the ESV API ignores the translation -- so for a passage the honest
 #: next step is telling the user.
-_OVERRIDE_HINT = (
+_OVERRIDE_HINT = "call again with strict=false to render anyway"
+#: When something would be dropped, say so: the caller must not promise a
+#: complete deck, and `skipped` saves reading the problems as prose.
+_OVERRIDE_SKIP_HINT = (
     "call again with strict=false to render anyway; `skipped` lists what is "
     f"left out (the problems mark it '{SKIP_MARKER}'), so tell the user what "
     "is missing"
@@ -78,6 +83,13 @@ _PASSAGE_BLOCKED_HINT = (
     "this passage cannot be laid out on these slides as it stands, and "
     "changing strict will not help; tell the user what the problems say"
 )
+
+
+def _refusal_hint(fits: bool, skipped: Sequence[str], blocked: str) -> str:
+    """The hint for a refusal: blocked, overridable, or overridable with a cost."""
+    if not fits:
+        return blocked
+    return _OVERRIDE_SKIP_HINT if skipped else _OVERRIDE_HINT
 
 
 def _resolve_dir(output_dir: str) -> str:
@@ -115,8 +127,8 @@ def preview_slides(
     previews, skipped = renderable_verses(verses)
     return {
         "reference": reference,
-        # Every verse with text, including any left out of `slides` below.
-        "verse_count": sum(1 for text, _ in verses if text.strip()),
+        # Every verse fetched, so len(slides) + len(skipped) adds up.
+        "verse_count": len(verses),
         "slides": [{"reference": ref, "lines": lines} for ref, lines in previews],
         "skipped": skipped,
         "problems": problems,
@@ -166,7 +178,7 @@ def generate_slides(
             "rendered": False,
             "problems": problems,
             "skipped": skipped,
-            "hint": _OVERRIDE_HINT if fits else _PASSAGE_BLOCKED_HINT,
+            "hint": _refusal_hint(fits, skipped, _PASSAGE_BLOCKED_HINT),
         }
 
     # Straight to the renderer rather than through cli.build: that would fetch
@@ -246,11 +258,18 @@ def preview_points(
     except ValueError:
         # Whatever made planning impossible is already in `problems`:
         # validate_points ran the same plan and recorded it.
-        return {"style": style, "slide_count": 0, "slides": [], "problems": problems}
+        return {
+            "style": style,
+            "slide_count": 0,
+            "slides": [],
+            "skipped": skipped_points(points),
+            "problems": problems,
+        }
     return {
         "style": style,
         "slide_count": len(slides),
         "slides": slides,
+        "skipped": skipped_points(points),
         "problems": problems,
     }
 
@@ -282,19 +301,21 @@ def generate_points(
     problems = validate_points(points, style)
     # validate_points has already planned the deck, so a clean deck fits.
     fits = not problems or points_fit(points, style)
+    skipped = skipped_points(points) if problems else []
     if problems and (strict or not fits):
         return {
             "style": style,
             "rendered": False,
             "problems": problems,
-            "hint": _OVERRIDE_HINT if fits else _POINTS_BLOCKED_HINT,
+            "skipped": skipped,
+            "hint": _refusal_hint(fits, skipped, _POINTS_BLOCKED_HINT),
         }
 
     # As in generate_slides: the renderer directly, so nothing reaches stdout.
     output_dir = _resolve_dir(output_dir)
     paths = _render_points(points, output_dir=output_dir, style=style)
     # The renderer drops blank entries, so say which never reached a slide.
-    skipped = [f"point {i}" for i, text in enumerate(points, 1) if not text.strip()]
+    skipped = skipped_points(points)
     result: dict[str, Any] = {
         "style": style,
         "rendered": True,

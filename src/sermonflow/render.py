@@ -139,8 +139,8 @@ def generate_slides(
 
     Verses with no renderable text, or too long for a slide, are skipped
     rather than raising, so one bad entry in a passage cannot abort the batch.
-    validate() reports both kinds before rendering; compare len(result) with
-    len(verses) to detect skips here.
+    validate() reports both kinds before rendering, and cli.renderable_verses
+    names them; the paths returned here say only what was written.
 
     Args:
         verses: list of (verse_text, reference) pairs, in order.

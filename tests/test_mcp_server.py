@@ -103,6 +103,10 @@ class TestStrictHint:
         result = mcp_server.generate_points([GREEK], output_dir=str(tmp_path))
         assert not result['rendered']
         assert 'strict=false' in result['hint']
+        # Nothing is dropped here, so the hint must not promise a `skipped`
+        # list to relay.
+        assert result['skipped'] == []
+        assert 'skipped' not in result['hint']
         forced = mcp_server.generate_points([GREEK], output_dir=str(tmp_path), strict=False)
         assert forced['rendered']
 
@@ -227,6 +231,15 @@ class TestPreviewSlides:
         # missing, not leave the model to diff counts or read prose.
         assert result['skipped'] == ['Book 1:2 ESV']
 
+    def test_counts_reconcile_with_a_blank_verse(self, monkeypatch):
+        serve(monkeypatch, [
+            ('Short.', 'Book 1:1 ESV'),
+            ('   ', 'Book 1:2 ESV'),
+        ])
+        result = mcp_server.preview_slides('Book 1')
+        # A model doing the obvious arithmetic must not invent a missing verse.
+        assert len(result['slides']) + len(result['skipped']) == result['verse_count']
+
     def test_two_verses_with_one_reference_do_not_hide_a_skip(self, monkeypatch):
         # A skip is positional: a shared reference must not make it invisible.
         serve(monkeypatch, [
@@ -266,6 +279,18 @@ class TestUnforeseenPlanningError:
 
 
 class TestSkippedPoints:
+    def test_the_refusal_names_the_blank_point(self, tmp_path):
+        # The hint points at `skipped`, so the refusal has to carry it.
+        result = mcp_server.generate_points(
+            ['One.', '   ', 'Three.'], output_dir=str(tmp_path)
+        )
+        assert not result['rendered']
+        assert result['skipped'] == ['point 2']
+
+    def test_the_preview_names_the_blank_point(self):
+        result = mcp_server.preview_points(['One.', '   ', 'Three.'])
+        assert result['skipped'] == ['point 2']
+
     def test_a_blank_point_is_reported_as_skipped(self, tmp_path):
         result = mcp_server.generate_points(
             ['One.', '   ', 'Three.'], output_dir=str(tmp_path), strict=False

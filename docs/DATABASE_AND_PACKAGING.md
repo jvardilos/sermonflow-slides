@@ -99,7 +99,7 @@ def generate_slides_cached(
         if tiff is None:                       # miss -> render once, cache it
             try:
                 tiff = compose_slide(text, ref).tobytes_tiff()
-            except SlideOverflowError:         # skipped, as generate_slides does
+            except (EmptyVerseError, SlideOverflowError):   # as generate_slides skips
                 continue
             store.put(key, tiff)
         path = os.path.join(output_dir, slide_filename(ref, i))
