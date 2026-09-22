@@ -20,8 +20,17 @@ from ..text import Verse
 DEFAULT_TRANSLATION = "ESV"
 
 #: Hyphen plus the Unicode dashes a source might write a range with -- the ESV
-#: API uses an en dash, BibleGateway a plain hyphen.
-_DASHES = r"-‐-―"
+#: API uses an en dash, BibleGateway a plain hyphen. Escaped so every character
+#: is visible and the leading hyphen stays literal inside the character class.
+_DASHES = (
+    "-"
+    "‐"  # hyphen
+    "‑"  # non-breaking hyphen
+    "‒"  # figure dash
+    "–"  # en dash
+    "—"  # em dash
+    "―"  # horizontal bar
+)
 
 #: A passage label as a source states it, e.g. "John 17", "1 John 4", "Jude",
 #: "Jude 1-25". The book may carry a leading numeral ("3 John") and may be

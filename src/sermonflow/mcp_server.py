@@ -32,14 +32,13 @@ connectors that connect to a URL rather than launching a process.
 from __future__ import annotations
 
 import argparse
+import os
 from typing import Any
 
 from mcp.server import MCPServer
 
 from . import __version__
 from .cli import (
-    build,
-    build_points,
     prepare,
     preview_lines,
     preview_points as _preview_points,
@@ -47,8 +46,19 @@ from .cli import (
 )
 from .layouts import DEFAULT_POINT_STYLE, POINT_STYLES
 from .providers import DEFAULT_TRANSLATION
+from .render import generate_points as _render_points, generate_slides as _render_slides
 
 mcp = MCPServer("sermonflow-slides", version=__version__)
+
+
+def _resolve_dir(output_dir: str) -> str:
+    """
+    `output_dir` as an absolute path, `~` expanded.
+
+    The model reading a tool result cannot know this process's working
+    directory, so a relative path in the result would not locate anything.
+    """
+    return os.path.abspath(os.path.expanduser(output_dir))
 
 
 @mcp.tool()
@@ -105,7 +115,7 @@ def generate_slides(
 
     Returns the written paths, or the blocking problems when strict and unclean.
     """
-    _, problems = prepare(reference, translation)
+    verses, problems = prepare(reference, translation)
     if problems and strict:
         return {
             "reference": reference,
@@ -114,13 +124,11 @@ def generate_slides(
             "hint": "call again with strict=false to render anyway",
         }
 
-    paths = build(
-        reference,
-        output_dir=output_dir,
-        translation=translation,
-        dry_run=False,
-        strict=False,
-    )
+    # Straight to the renderer rather than through cli.build: that would fetch
+    # the passage a second time and print its summary onto stdout, which over
+    # stdio is the protocol stream.
+    output_dir = _resolve_dir(output_dir)
+    paths = _render_slides(verses, output_dir=output_dir, formatted=True)
     return {
         "reference": reference,
         "rendered": True,
@@ -171,8 +179,10 @@ def preview_points(
             N points produce N slides and slide N shows points 1..N. Use it for
             an outline the speaker walks through. "centered" gives each point
             its own slide, centered on the canvas -- use it for a single
-            statement meant to land on its own. Call list_layouts for the
-            current set.
+            statement meant to land on its own. "stacked" also gives each
+            entry its own slide, but splits the entry on newlines into
+            paragraphs stacked on that slide -- a lie above its truth, or a
+            short list of steps. Call list_layouts for the current set.
 
     Returns one entry per slide it would render, with the wrapped lines, plus
     any validation problems.
@@ -210,7 +220,8 @@ def generate_points(
 
     Args:
         points: the statements, in the order they should appear on screen.
-        style: "rolling" (default) or "centered"; see list_layouts.
+        style: "rolling" (default), "centered" or "stacked"; see
+            preview_points and list_layouts.
         output_dir: folder to write the TIFF slides into (created if missing).
         strict: when True, refuse to render if validation finds any problem and
             return those problems instead of writing files.
@@ -226,7 +237,9 @@ def generate_points(
             "hint": "shorten the points, or call again with strict=false",
         }
 
-    paths = build_points(points, output_dir=output_dir, style=style, strict=False)
+    # As in generate_slides: the renderer directly, so nothing reaches stdout.
+    output_dir = _resolve_dir(output_dir)
+    paths = _render_points(points, output_dir=output_dir, style=style)
     return {
         "style": style,
         "rendered": True,

@@ -225,7 +225,8 @@ def main(argv: Sequence[str] | None = None) -> None:
         default=DEFAULT_POINT_STYLE,
         choices=point_style_names(),
         help=f"point layout (default: {DEFAULT_POINT_STYLE}); "
-        "rolling reveals one point at a time, centered gives each its own slide",
+        "rolling reveals one point at a time, centered gives each its own slide, "
+        "stacked puts an entry's newline-separated paragraphs on one slide",
     )
     parser.add_argument("-o", "--output-dir", default="./slides")
     parser.add_argument("-t", "--translation", default=DEFAULT_TRANSLATION)

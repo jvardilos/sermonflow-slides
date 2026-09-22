@@ -70,6 +70,15 @@ REFERENCE_WEIGHT = "medium"
 #: 26-character line. See layouts/points.py for the full measurement.
 POINT_WEIGHT = "medium-italic"
 
+#: PIL picks its layout engine at import: Raqm when the Pillow build has
+#: libraqm, BASIC otherwise. That choice is not cosmetic here. Raqm applies GPOS
+#: itself, and this module applies pair kerning by hand precisely because basic
+#: layout does not -- so under Raqm every kerned pair would be adjusted twice in
+#: measurement but once in drawing, and wrapping would stop describing what is
+#: drawn. macOS wheels ship without libraqm and Linux wheels with it, and every
+#: layout constant was fitted under basic layout, so it is pinned, not inherited.
+LAYOUT_ENGINE = ImageFont.Layout.BASIC
+
 #: (path, collection index). Bundled Neue Haas is plain TTF, so index is 0.
 _FontFace = tuple[str, int]
 #: (label, verse face, reference face, horizontal scale).
@@ -291,7 +300,10 @@ def load_face(weight: str, size: int = FONT_SIZE) -> Face:
     path = _font_file(filename)
     if os.path.exists(path):
         try:
-            return Face(ImageFont.truetype(path, size), _load_kerning(path, 0))
+            return Face(
+                ImageFont.truetype(path, size, layout_engine=LAYOUT_ENGINE),
+                _load_kerning(path, 0),
+            )
         except OSError:
             pass
     # Defensive: only reached if the bundled font cannot be read. load_default
@@ -324,12 +336,10 @@ def text_measurer(font: Face | FreeTypeFont, scale: float | None = None) -> Meas
     HORIZONTAL_SCALE, so wrapping and TEXT_BOX_WIDTH both talk about the pixels
     that end up on the slide rather than the font's bare advance widths.
 
-    Note on kerning: a Pillow built with Raqm (HarfBuzz) already shapes and
-    kerns whole strings in `textlength`, so on such a build `kern_width` here is
-    an *additional* pair adjustment on top of native shaping. That is
-    deliberate and safe -- it only tightens, so a line can break early but never
-    overflow the box -- and it keeps wrapping identical whether or not the
-    running Pillow happens to ship Raqm. See the layout box-bound tests.
+    Kerning is added here by hand because `textlength` under basic layout is
+    the bare sum of advance widths. load_face pins that engine (LAYOUT_ENGINE)
+    so this holds on every Pillow build; a bare FreeTypeFont passed in from
+    elsewhere may carry Raqm, which kerns natively and would be kerned twice.
     """
     face = _as_face(font)
     factor = HORIZONTAL_SCALE if scale is None else scale
