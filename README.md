@@ -110,10 +110,17 @@ The server (`src/sermonflow/mcp_server.py`) gives Claude five tools:
 | Tool | What it does |
 |---|---|
 | `preview_slides(reference, translation="ESV")` | Wrapped lines per verse, plus any validation problems. Writes nothing. |
-| `generate_slides(reference, translation="ESV", output_dir="./slides", strict=True)` | Fetches, validates and renders a chapter. Returns absolute paths, or the problems when `strict` and the text isn't clean. |
+| `generate_slides(reference, translation="ESV", output_dir="./slides", strict=True)` | Fetches, validates and renders a chapter. Returns absolute paths, or the problems and a hint when it refuses. |
 | `preview_points(points, style="rolling")` | How a list of points will lay out. Writes nothing. |
-| `generate_points(points, style="rolling", output_dir="./slides", strict=True)` | Renders a list of points. Returns absolute paths. |
+| `generate_points(points, style="rolling", output_dir="./slides", strict=True)` | Renders a list of points. Returns absolute paths, or the problems and a hint when it refuses. |
 | `list_layouts()` | The point styles and when each fits, read from the layout registry. |
+
+Validation problems come in two kinds. Some, like a character the font can't
+draw, are doubts: `strict=True` refuses on them, and `strict=False` renders
+anyway. Others mean the content can't be laid out at all, such as a verse
+too long for one slide, points that run past the safe area, or no text. Those
+are refused either way, and the hint says so, so Claude doesn't retry
+something that can't work.
 
 The tools are split by slide type rather than combined behind one mode flag,
 because the split lets Claude choose from what the user said. A passage named
