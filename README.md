@@ -1,46 +1,124 @@
 # sermonflow-slides
 
-A Claude plugin that makes ProPresenter-ready slides for a sermon: Scripture
-one verse per slide, or sermon points in three styles. The slides match a
-hand-built Photoshop template closely enough to drop into the same service.
+Makes ProPresenter-ready slides for a sermon: Scripture one verse per slide,
+or sermon points in three styles. The slides match a hand-built Photoshop
+template closely enough to drop into the same service. It ships as a Claude
+plugin, and underneath it is a standard MCP server, which is what lets ChatGPT
+use it too.
 
 Ask for `"John 17"` and it produces 26 transparent 1920×1080 TIFFs: verse text
 set over a black left-hand scrim, with the reference line underneath.
 
-The plugin file is the only supported way to use it. Everything below the
-[Maintaining](#maintaining) heading is for whoever builds that file.
+There are two ways in: install the plugin file in **Claude**, or connect the
+slide server to **ChatGPT**. Both are below. Everything under
+[Maintaining](#maintaining) is for whoever builds the plugin file.
 
 ---
 
-## Install
+## Before you start
 
-You need:
+Both paths need the same two things:
 
-- **Claude**: the desktop app (Cowork) or Claude Code
-- **[uv](https://docs.astral.sh/uv/)** on the same machine. The plugin starts
-  its slide server with `uv run`. Install uv with `brew install uv`, or with the
-  installer from the uv docs.
-- **An internet connection on first use.** The first launch downloads the
-  server's Python dependencies. Fetching Scripture needs the network every time.
+- **[uv](https://docs.astral.sh/uv/)** on the computer that will make the
+  slides. That is what starts the slide server. Install it with
+  `brew install uv`, or with the installer from the uv docs.
+- **An internet connection.** The very first launch downloads the server's
+  Python dependencies, which takes a few minutes and looks like nothing is
+  happening. Fetching Scripture needs the network every time after that.
 
-Then add the plugin:
+The ChatGPT path also needs a tunnel tool — cloudflared or ngrok.
+`brew install cloudflared` gets you one.
+
+---
+
+## Install in Claude
+
+The short path: upload one file.
 
 1. Get the `sermonflow-slides.plugin` file from whoever maintains it.
-2. In the Claude desktop app, open **Customize → Plugins**.
-3. Choose the upload option and select `sermonflow-slides.plugin`.
+2. Open the Claude desktop app and go to **Customize → Plugins**.
+3. Choose the upload option and pick `sermonflow-slides.plugin`.
+4. Open the plugin: it lists the `sermon-slide-generator` skill and the
+   connector that runs the slide server.
+5. Ask Claude *"Preview John 17"*. Wrapped verse lines coming back means the
+   server really started — asking which styles exist is not a test, because
+   Claude can answer that from the plugin's own documentation without the
+   server running at all.
 
 A plugin uploaded in the desktop app also syncs to Claude Code on the same
-account, where it shows up as `sermonflow-slides@synced` in
-`claude plugin list`.
+account, where `claude plugin list` shows it as `sermonflow-slides@synced` and
+`claude mcp list` should report it as **✔ Connected**.
 
 **To update**, uninstall the old version under **Customize → Plugins** and
 upload the new file.
 
 ---
 
+## Install in ChatGPT
+
+ChatGPT cannot read a Claude plugin file, so here you run the slide server
+yourself and point ChatGPT at it. It speaks the same Model Context Protocol;
+only the transport differs.
+
+You need the project's files. The `.plugin` file is a zip of them, so unzip it
+— or clone
+[github.com/jvardilos/sermonflow-slides](https://github.com/jvardilos/sermonflow-slides)
+and use that folder instead.
+
+1. Unzip the plugin file into a folder you can keep:
+
+   ```bash
+   unzip sermonflow-slides.plugin -d ~/sermonflow-slides
+   ```
+
+2. Start the server, from the folder you want the slides to land in:
+
+   ```bash
+   cd ~/Documents/sunday-slides
+   uv run --project ~/sermonflow-slides sermonflow-mcp --http --port 8000
+   ```
+
+   It serves MCP at `http://127.0.0.1:8000/mcp` and keeps running until you
+   stop it with Ctrl-C. Starting it from the folder you want matters: a
+   relative output folder is resolved against wherever you launched it, so ask
+   for a full path (`~/Documents/sunday-slides`) if you'd rather not think
+   about it.
+
+3. Give it a public HTTPS address, because ChatGPT connects from the internet
+   rather than from your machine:
+
+   ```bash
+   cloudflared tunnel --url http://127.0.0.1:8000    # or: ngrok http 8000
+   ```
+
+   Take the `https://…` address it prints and add `/mcp` to the end.
+
+   **Your tunnel has to rewrite the `Host` header** to `127.0.0.1:8000`. The
+   server refuses requests that arrive claiming any other host — a protection
+   against DNS rebinding that it switches on automatically when it is bound to
+   localhost — so without the rewrite every request comes back
+   `421 Misdirected Request`. Both cloudflared and ngrok have a host-header
+   option; check your tunnel's docs for the exact flag. Binding the server with
+   `--host 0.0.0.0` also silences the check, but then anything on your network
+   can reach it.
+
+4. In ChatGPT, open **Settings → Connectors**, add a connector, and paste that
+   URL. On some plans connectors sit behind developer mode.
+5. Ask ChatGPT *"Preview John 17"*. Wrapped verse lines coming back means the
+   whole chain works.
+
+**Three things to know.** The server has no password: anyone who has the URL
+can make it write files on your computer, so stop the tunnel when you are done
+and don't leave it running on a shared network. Slides are written on the
+machine running the server — yours — not wherever ChatGPT is. And a connector
+left idle for half an hour has its session expire; restart the server and
+reconnect if a request fails after a long pause.
+
+---
+
 ## Use
 
-Ask Claude in plain language:
+Ask in plain language, in whichever assistant you set up:
 
 - "Preview John 17."
 - "Make slides for Romans 8 in ~/Documents/sunday-slides."
