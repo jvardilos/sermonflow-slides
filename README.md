@@ -236,7 +236,15 @@ git archive --format=zip -o sermonflow-slides.plugin HEAD \
 
 This builds from committed files only, so commit first. `README.md` has to be
 in the archive because `pyproject.toml` names it as the package readme, and the
-package build fails without it.
+package build fails without it. The archive lists its members explicitly, so it
+never contains the previous `.plugin` file.
+
+`sermonflow-slides.plugin` is **tracked in this repo**, so whoever installs it
+can download it from here. That means a release is two commits' worth of work
+in one: bump the versions, rebuild, and commit the rebuilt file. A stale
+committed artifact is worse than none, because it looks current. (A zip cannot
+be delta-compressed, so each committed rebuild adds its full size to history —
+if that grows tiresome, move the file to a GitHub Release asset instead.)
 
 To try a build in Claude Code before handing it out, give it a `.zip` name.
 `--plugin-dir` ignores the `.plugin` extension.
@@ -247,7 +255,16 @@ claude --plugin-dir /somewhere/sermonflow-slides.zip mcp list   # expect: ✔ Co
 ```
 
 When you release, bump the version in `pyproject.toml`,
-`src/sermonflow/__init__.py` and `.claude-plugin/plugin.json` together.
+`src/sermonflow/__init__.py` and `.claude-plugin/plugin.json` together, then
+rebuild and commit `sermonflow-slides.plugin`.
+
+Two things to check in a built file before handing it out, because both have
+shipped broken before:
+
+```bash
+unzip -p sermonflow-slides.plugin .mcp.json                     # expect: uv run --project ${CLAUDE_PLUGIN_ROOT}
+unzip -p sermonflow-slides.plugin .claude-plugin/plugin.json | grep version
+```
 
 ### Dev setup
 
