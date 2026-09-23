@@ -26,9 +26,8 @@ Both paths need the same two things:
   Python dependencies, which takes a few minutes and looks like nothing is
   happening. Fetching Scripture needs the network every time after that.
 
-The ChatGPT path also needs a tunnel tool ([cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
-or [ngrok](https://ngrok.com/download)) — `brew install cloudflared` gets you
-one.
+The ChatGPT path also needs a tunnel tool — cloudflared or ngrok.
+`brew install cloudflared` gets you one.
 
 ---
 
