@@ -1,46 +1,95 @@
 # sermonflow-slides
 
-A Claude plugin that makes ProPresenter-ready slides for a sermon: Scripture
-one verse per slide, or sermon points in three styles. The slides match a
+Makes ProPresenter-ready slides for a sermon: Scripture one verse per slide,
+or sermon points in three styles. It ships as a Claude plugin, and underneath
+it is a standard MCP server, which is what lets ChatGPT use it too. The slides match a
 hand-built Photoshop template closely enough to drop into the same service.
 
 Ask for `"John 17"` and it produces 26 transparent 1920×1080 TIFFs: verse text
 set over a black left-hand scrim, with the reference line underneath.
 
-The plugin file is the only supported way to use it. Everything below the
-[Maintaining](#maintaining) heading is for whoever builds that file.
+There are two ways in: install the plugin file in **Claude**, or connect the
+slide server to **ChatGPT**. Both are below. Everything under
+[Maintaining](#maintaining) is for whoever builds the plugin file.
 
 ---
 
-## Install
+## Install in Claude
 
-You need:
+This is the short path: upload one file.
 
-- **Claude**: the desktop app (Cowork) or Claude Code
-- **[uv](https://docs.astral.sh/uv/)** on the same machine. The plugin starts
-  its slide server with `uv run`. Install uv with `brew install uv`, or with the
-  installer from the uv docs.
-- **An internet connection on first use.** The first launch downloads the
-  server's Python dependencies. Fetching Scripture needs the network every time.
-
-Then add the plugin:
+**Before you start**, you need [uv](https://docs.astral.sh/uv/) on the same
+computer — the plugin starts its slide server with `uv run`. Install it with
+`brew install uv`, or with the installer from the uv docs. You also need an
+internet connection the first time, because that first launch downloads the
+server's Python dependencies. (Fetching Scripture needs the network every
+time.)
 
 1. Get the `sermonflow-slides.plugin` file from whoever maintains it.
-2. In the Claude desktop app, open **Customize → Plugins**.
-3. Choose the upload option and select `sermonflow-slides.plugin`.
+2. Open the Claude desktop app and go to **Customize → Plugins**.
+3. Choose the upload option and pick `sermonflow-slides.plugin`.
+4. Open the plugin to check it: it should list the SermonFlow skill and its
+   connector.
+5. Ask Claude *"Which point styles are there?"*. An answer naming `rolling`,
+   `centered` and `stacked` means the server started and the tools are live.
 
 A plugin uploaded in the desktop app also syncs to Claude Code on the same
-account, where it shows up as `sermonflow-slides@synced` in
-`claude plugin list`.
+account, where `claude plugin list` shows it as `sermonflow-slides@synced`.
 
 **To update**, uninstall the old version under **Customize → Plugins** and
 upload the new file.
 
 ---
 
+## Install in ChatGPT
+
+ChatGPT cannot read a Claude plugin file, so here you run the slide server
+yourself and point ChatGPT at it. It talks the same Model Context Protocol;
+only the transport differs.
+
+**Before you start**, you need [uv](https://docs.astral.sh/uv/) and the
+project's files. The `.plugin` file is a zip of them, so either unzip it or
+clone the repository.
+
+1. Unzip the plugin file into a folder you can keep:
+
+   ```bash
+   unzip sermonflow-slides.plugin -d ~/sermonflow-slides
+   ```
+
+2. Start the server over HTTP:
+
+   ```bash
+   uv run --project ~/sermonflow-slides sermonflow-mcp --http --port 8000
+   ```
+
+   It serves MCP at `http://127.0.0.1:8000/mcp` and keeps running until you
+   stop it with Ctrl-C.
+
+3. Give it a public HTTPS address, because ChatGPT connects from the internet
+   rather than from your machine. A tunnel is the quick way:
+
+   ```bash
+   cloudflared tunnel --url http://localhost:8000    # or: ngrok http 8000
+   ```
+
+   Take the `https://…` address it prints and add `/mcp` to the end.
+
+4. In ChatGPT, open **Settings → Connectors**, add a connector, and paste that
+   URL. On some plans connectors live behind developer mode.
+5. Ask ChatGPT *"Which point styles are there?"* to confirm it can reach the
+   tools.
+
+**Two things to know.** The server has no password: anyone who has the URL can
+make it write files on your computer, so stop the tunnel when you are done, and
+don't leave it running on a shared network. And slides are written on the
+machine running the server — your computer — not wherever ChatGPT is.
+
+---
+
 ## Use
 
-Ask Claude in plain language:
+Ask in plain language, in whichever assistant you set up:
 
 - "Preview John 17."
 - "Make slides for Romans 8 in ~/Documents/sunday-slides."
