@@ -17,8 +17,11 @@ slide server to **ChatGPT**. Both are below. Everything under
 
 ## Before you start
 
-Both paths need the same two things:
+Both paths need the same things:
 
+- **An assistant.** The Claude path needs the Claude **desktop** app, since
+  that is what uploads a plugin file; it then syncs to Claude Code. The
+  ChatGPT path needs a ChatGPT plan whose settings offer connectors.
 - **[uv](https://docs.astral.sh/uv/)** on the computer that will make the
   slides. That is what starts the slide server. Install it with
   `brew install uv`, or with the installer from the uv docs.
@@ -74,8 +77,8 @@ and use that folder instead.
 2. Start the server, from the folder you want the slides to land in:
 
    ```bash
-   cd ~/Documents/sunday-slides
-   uv run --project ~/sermonflow-slides sermonflow-mcp --http --port 8000
+   mkdir -p ~/Documents/sunday-slides && cd ~/Documents/sunday-slides
+   uv run --project ~/sermonflow-slides sermonflow-mcp --http --host 0.0.0.0 --port 8000
    ```
 
    It serves MCP at `http://127.0.0.1:8000/mcp` and keeps running until you
@@ -83,6 +86,14 @@ and use that folder instead.
    relative output folder is resolved against wherever you launched it, so ask
    for a full path (`~/Documents/sunday-slides`) if you'd rather not think
    about it.
+
+   **`--host 0.0.0.0` is needed for the next step**, and it is the part to be
+   careful about. Bound to localhost instead, the server turns on a protection
+   against DNS rebinding and then rejects anything arriving through a tunnel:
+   `421` if the request names another host, `403` if it carries an `Origin`
+   such as ChatGPT's. Opening it up avoids both, at the price of everything on
+   your network being able to reach it — and it has no password. Run it only
+   while you are making slides, and not on a network you don't trust.
 
 3. Give it a public HTTPS address, because ChatGPT connects from the internet
    rather than from your machine:
@@ -92,15 +103,6 @@ and use that folder instead.
    ```
 
    Take the `https://…` address it prints and add `/mcp` to the end.
-
-   **Your tunnel has to rewrite the `Host` header** to `127.0.0.1:8000`. The
-   server refuses requests that arrive claiming any other host — a protection
-   against DNS rebinding that it switches on automatically when it is bound to
-   localhost — so without the rewrite every request comes back
-   `421 Misdirected Request`. Both cloudflared and ngrok have a host-header
-   option; check your tunnel's docs for the exact flag. Binding the server with
-   `--host 0.0.0.0` also silences the check, but then anything on your network
-   can reach it.
 
 4. In ChatGPT, open **Settings → Connectors**, add a connector, and paste that
    URL. On some plans connectors sit behind developer mode.
@@ -125,10 +127,10 @@ Ask in plain language, in whichever assistant you set up:
 - "Rolling point slides: Jesus is Lord. He rose from the dead. We are redeemed."
 - "Which point styles are there?"
 
-Claude usually previews first and shows you how every slide will wrap. It
-renders once you approve the preview, or straight away if you asked outright
-for the files. Name the folder you want the slides in; otherwise Claude picks
-one and tells you the path. If validation finds a problem, it stops and tells
+The assistant usually previews first and shows you how every slide will wrap.
+It renders once you approve the preview, or straight away if you asked outright
+for the files. Name the folder you want the slides in; otherwise it picks one
+and tells you the path. If validation finds a problem, it stops and tells
 you instead of rendering. The kinds of problem it catches: leftover footnote
 markers, a character the font cannot draw, a verse too long for one slide, or
 too many points for one screen. Tell it to go ahead anyway and it renders what
