@@ -87,13 +87,23 @@ and use that folder instead.
    for a full path (`~/Documents/sunday-slides`) if you'd rather not think
    about it.
 
-   **`--host 0.0.0.0` is needed for the next step**, and it is the part to be
-   careful about. Bound to localhost instead, the server turns on a protection
-   against DNS rebinding and then rejects anything arriving through a tunnel:
-   `421` if the request names another host, `403` if it carries an `Origin`
-   such as ChatGPT's. Opening it up avoids both, at the price of everything on
-   your network being able to reach it — and it has no password. Run it only
-   while you are making slides, and not on a network you don't trust.
+   **`--host 0.0.0.0` is needed for the next step, and it is the risky part.**
+   Bound to localhost, the server switches on a protection against DNS
+   rebinding and then rejects anything arriving through a tunnel: `421` if the
+   request names another host, `403` if it carries an `Origin` such as
+   ChatGPT's. Opening the bind address turns that protection off, which is what
+   makes the tunnel work — and what you are accepting in exchange:
+
+   - Anything on your local network can reach it, and it has no password.
+   - **Any web page you visit while it runs can drive it**, because with the
+     check off the server accepts requests from any origin. A page could tell
+     it to write slide files on your computer.
+
+   So run it only while you are actually making slides, stop it (Ctrl-C) and
+   close the tunnel when you're done, and don't do it on a network you don't
+   trust. If that trade is not one you want, the loopback-bound path needs the
+   server to allow the tunnel's host and origin explicitly — that flag does not
+   exist yet, and is tracked in issue #29.
 
 3. Give it a public HTTPS address, because ChatGPT connects from the internet
    rather than from your machine:
@@ -244,9 +254,11 @@ never contains the previous `.plugin` file.
 `sermonflow-slides.plugin` is **tracked in this repo**, so whoever installs it
 can download it from here. That means a release is two commits' worth of work
 in one: bump the versions, rebuild, and commit the rebuilt file. A stale
-committed artifact is worse than none, because it looks current. (A zip cannot
-be delta-compressed, so each committed rebuild adds its full size to history —
-if that grows tiresome, move the file to a GitHub Release asset instead.)
+committed artifact is worse than none, because it looks current. (Git does try
+to delta these archives against each other, and gets almost nothing: measured
+across two builds that differ only in this README, each one stores about 664 KB
+of the 667 KB it weighs. So history grows by roughly a full copy per committed
+rebuild — if that grows tiresome, move the file to a GitHub Release asset.)
 
 To try a build in Claude Code before handing it out, give it a `.zip` name.
 `--plugin-dir` ignores the `.plugin` extension.
@@ -264,7 +276,7 @@ Two things to check in a built file before handing it out, because both have
 shipped broken before:
 
 ```bash
-unzip -p sermonflow-slides.plugin .mcp.json                     # expect: uv run --project ${CLAUDE_PLUGIN_ROOT}
+unzip -p sermonflow-slides.plugin .mcp.json                     # command "uv", args carry --project ${CLAUDE_PLUGIN_ROOT}
 unzip -p sermonflow-slides.plugin .claude-plugin/plugin.json | grep version
 ```
 
