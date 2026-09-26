@@ -72,6 +72,31 @@ class SlideOverflowError(ValueError):
     """Raised when content needs more room than the slide can give it."""
 
 
+class PointOverflowError(SlideOverflowError):
+    """
+    One point that will not fit, with its position in the deck it was planned in.
+
+    render.plan_points drops blank entries before planning, so the index a
+    planner counts is not the one the caller gave. Carrying the index and the
+    detail apart lets plan_points restate the message with the caller's own
+    numbering, instead of naming a point the caller never sent.
+
+    So `index` counts the list its raiser was handed: planner-local when a
+    planner raises it, and the caller's own position once plan_points has
+    restated it. Catch it around plan_points to get the caller's numbering.
+    """
+
+    def __init__(self, index: int, detail: str) -> None:
+        # Both arguments go to super(), so copy and pickle can rebuild it:
+        # BaseException replays `args` through __init__.
+        super().__init__(index, detail)
+        self.index = index
+        self.detail = detail
+
+    def __str__(self) -> str:
+        return f"point {self.index} {self.detail}"
+
+
 class EmptyVerseError(ValueError):
     """Raised when a slide has no renderable text. Batch renders skip these."""
 

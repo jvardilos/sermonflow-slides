@@ -173,6 +173,28 @@ class TestDryRun:
         assert 'will not help' in str(exc.value)
 
 
+class TestRunFolder:
+    def test_the_summary_names_the_run_folder(self, tmp_path, capsys):
+        paths = build_points(['One.'], output_dir=str(tmp_path))
+        run = os.path.dirname(paths[0])
+        assert os.path.dirname(run) == str(tmp_path)
+        assert run in capsys.readouterr().out
+
+    def test_a_passage_render_uses_one_too(self, tmp_path):
+        # The stale-slide case is a verse case: a re-render that skips verse 2
+        # must not leave the earlier run's slide standing in for it.
+        provider = serving(('The first verse fits.', 'Book 1:1 ESV'))
+        paths = build('Book 1', output_dir=str(tmp_path), provider=provider)
+        assert os.path.dirname(os.path.dirname(paths[0])) == str(tmp_path)
+        assert list(tmp_path.glob('*.tif')) == []
+
+    def test_an_earlier_deck_in_the_folder_is_left_alone(self, tmp_path):
+        stale = tmp_path / 'point_001.tif'
+        stale.write_bytes(b'old deck')
+        build_points(['One.'], output_dir=str(tmp_path))
+        assert stale.read_bytes() == b'old deck'
+
+
 class TestValidatePoints:
     def test_an_unexpected_planning_error_is_reported_not_raised(self, monkeypatch):
         # Validation's job is to report; a ValueError nobody anticipated still

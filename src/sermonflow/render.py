@@ -15,8 +15,10 @@ passage also skips a verse too long for any slide.
 
 from __future__ import annotations
 
+import errno
 import os
 from collections.abc import Iterable, Sequence
+from datetime import datetime
 from functools import lru_cache
 
 from PIL import Image
@@ -30,6 +32,7 @@ from .layouts import (
     TEXT_BOX_WIDTH,
     EmptyVerseError,
     Placed,
+    PointOverflowError,
     SlideOverflowError,
     get_point_style,
     plan_verse,
@@ -78,6 +81,38 @@ def render(placed: Placed, output_path: str) -> str:
     """Compose a planned slide and write it to `output_path` as an RGBA TIFF."""
     compose(placed).save(output_path, "TIFF")
     return output_path
+
+
+def reserve_run_dir(output_dir: str) -> str:
+    """
+    Create and return a folder of this run's own: `<output_dir>/<stamp>`.
+
+    Renders write into one of these rather than straight into the folder they
+    were given, so a second run cannot overwrite the first, and a slide from an
+    earlier run cannot stand in for a verse this one skipped. A counter is
+    added if the stamp is taken -- two runs in the same second, or a rerun of
+    an old one.
+
+    The folder is created here, and exclusively: testing for it and then using
+    the name would hand the same path to two runs starting in the same second,
+    which is the collision this exists to prevent.
+    """
+    base = os.path.expanduser(output_dir)
+    os.makedirs(base, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    for attempt in range(1, 100):
+        # Padded, so a folder that collided still sorts after the one it
+        # followed rather than between -1 and -2.
+        name = stamp if attempt == 1 else f"{stamp}-{attempt:02d}"
+        candidate = os.path.join(base, name)
+        try:
+            os.mkdir(candidate)
+        except FileExistsError:
+            continue
+        return candidate
+    raise FileExistsError(
+        errno.EEXIST, f"no free run folder for {stamp}", base
+    )
 
 
 def render_deck(slides: Sequence[Placed], output_dir: str = "./slides") -> list[str]:
@@ -188,9 +223,19 @@ def plan_points(
     the build.
     """
     kept = [text for text in points if text.strip()]
+    positions = [i for i, text in enumerate(points, 1) if text.strip()]
     if not kept:
         raise EmptyVerseError("no renderable points")
-    return get_point_style(style).plan(kept, stem)
+    try:
+        return get_point_style(style).plan(kept, stem)
+    except PointOverflowError as exc:
+        # The planner numbered from what it was handed, which is the list
+        # without the blanks; say it again with the caller's position. An
+        # index outside that list is not the caller's to read, so pass it
+        # through rather than naming a point they never sent.
+        if not 1 <= exc.index <= len(positions):
+            raise
+        raise PointOverflowError(positions[exc.index - 1], exc.detail) from exc
 
 
 def generate_points(
