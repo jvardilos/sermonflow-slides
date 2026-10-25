@@ -128,7 +128,15 @@ def preview_slides(
     A non-empty `skipped` means the deck would come out short of those verses:
     say so before rendering.
     """
-    verses, problems = prepare(reference, translation)
+    try:
+        verses, problems = prepare(reference, translation)
+    except ValueError as exc:
+        return {
+            "reference": reference, "rendered": False,
+            "verse_count": 0, "slides": [], "skipped": [],
+            "problems": [str(exc)],
+            "hint": "Resolve the API setup or retrieval problem, then retry.",
+        }
     # A verse too long for a slide is left out of `slides`, as generate_slides
     # leaves it out of the deck. `skipped` names those, so the safe look before
     # committing files says which verse will go missing.
@@ -172,7 +180,15 @@ def generate_slides(
     Returns the written paths plus `skipped` (references that never reached a
     slide), or the problems, `skipped` and a hint when it refuses.
     """
-    verses, problems = prepare(reference, translation)
+    try:
+        verses, problems = prepare(reference, translation)
+    except ValueError as exc:
+        return {
+            "reference": reference, "rendered": False,
+            "verse_count": 0, "slides": [], "skipped": [],
+            "problems": [str(exc)],
+            "hint": "Resolve the API setup or retrieval problem, then retry.",
+        }
     # One layout pass answers both questions: whether anything renders, and
     # which verses with text the render will leave out. A clean passage needs
     # neither -- validate() laid every verse out already.

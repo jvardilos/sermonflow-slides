@@ -3,9 +3,8 @@ Provider selection.
 
 One table names every backend, so the CLI and the MCP server never import a
 concrete provider, and a new backend is an entry in PROVIDERS rather than a new
-branch in each function below. The default is zero-config: the ESV API when an
-`ESV_API_KEY` is in the environment, otherwise the BibleGateway scraper so the
-tool still runs with nothing set up.
+branch in each function below. The default is the official ESV API, requiring ESV_API_KEY.
+BibleGateway remains available only by explicit provider selection.
 """
 
 from __future__ import annotations
@@ -26,7 +25,9 @@ def _esv_api() -> BibleProvider:
     key = os.environ.get(ESV_API_KEY_ENV)
     if not key:
         raise ValueError(
-            f"the esv-api provider needs {ESV_API_KEY_ENV} in the environment"
+            f"ESV API setup required: set {ESV_API_KEY_ENV} in the MCP server environment. "
+            "Create an application key at https://api.esv.org/. "
+            "BibleGateway scraping is no longer an automatic fallback."
         )
     return EsvApiProvider(key)
 
@@ -57,8 +58,8 @@ def provider_names() -> list[str]:
 
 
 def get_default_provider() -> BibleProvider:
-    """ESV API if `ESV_API_KEY` is set, else the BibleGateway scraper."""
-    return get_provider("esv-api" if os.environ.get(ESV_API_KEY_ENV) else "bible-gateway")
+    """Use the official ESV API; scraping is an explicit CLI opt-in only."""
+    return get_provider("esv-api")
 
 
 def get_provider(name: str) -> BibleProvider:

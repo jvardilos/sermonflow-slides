@@ -77,7 +77,7 @@ def parse_chapter(html: str, translation: str = DEFAULT_TRANSLATION) -> list[Ver
     """
     soup = BeautifulSoup(html, "html.parser")
 
-    heading = soup.select_one("div.bcv .dropdown-display-text")
+    heading = soup.select_one(".bcv .dropdown-display-text")
     if heading is None:
         raise ValueError("no passage found on page")
     # Passed through verbatim: format_citation parses it. The heading is

@@ -141,10 +141,10 @@ class TestBibleGatewayParse:
 
 
 class TestRegistry:
-    def test_no_key_falls_back_to_bible_gateway(self, monkeypatch):
+    def test_no_key_reports_setup_required(self, monkeypatch):
         monkeypatch.delenv(ESV_API_KEY_ENV, raising=False)
-        provider = get_default_provider()
-        assert isinstance(provider, BibleGatewayProvider)
+        with pytest.raises(ValueError, match="ESV API setup required"):
+            get_default_provider()
 
     def test_key_selects_the_esv_api(self, monkeypatch):
         monkeypatch.setenv(ESV_API_KEY_ENV, "test-key-123")
@@ -203,3 +203,9 @@ class TestRegistry:
     def test_both_providers_satisfy_the_protocol(self):
         assert isinstance(BibleGatewayProvider(), BibleProvider)
         assert isinstance(EsvApiProvider("k"), BibleProvider)
+
+
+def test_bible_gateway_span_heading():
+    html = TestBibleGatewayParse.HTML
+    html = html.replace('<div class="bcv"><div class="dropdown-display-text">John 3:16-17</div></div>', '<span class="bcv"><span class="dropdown-display-text">John 3:16-17</span></span>')
+    assert len(parse_chapter(html)) == 2

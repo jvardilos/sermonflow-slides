@@ -4,7 +4,7 @@ Verse retrieval from the official ESV API (api.esv.org).
 This is the preferred backend: a first-party, stable, documented JSON API,
 free for non-commercial use, and the project is already ESV-first. It needs an
 application key, so it activates only when one is present (see registry.py);
-without a key the BibleGateway scraper is used instead.
+without a key the default provider reports a setup error.
 
 The fetch/parse split mirrors bible_gateway.py: `fetch_chapter` does the HTTP
 call, `parse_passage_text` is pure and can be tested offline against a saved
@@ -21,7 +21,7 @@ from typing import Any
 import requests
 
 from ..text import Verse
-from .base import format_citation
+from .base import format_citation, split_label
 
 API_URL = "https://api.esv.org/v3/passage/text/"
 
@@ -30,8 +30,8 @@ API_URL = "https://api.esv.org/v3/passage/text/"
 _TRANSLATION = "ESV"
 
 # An inline verse marker: "[16]" for a single chapter, or "[3:16]" when a
-# passage spans chapters. Only the trailing verse number is captured.
-_VERSE_MARKER_RE = re.compile(r"\[(?:\d+:)?(\d+)\]")
+# passage spans chapters. Chapter and verse numbers are captured separately.
+_VERSE_MARKER_RE = re.compile(r"\[(?:(\d+):)?(\d+)\]")
 _WHITESPACE_RE = re.compile(r"\s+")
 
 # Text only, verse numbers on, everything else off -- so the parser sees just
@@ -61,13 +61,30 @@ class EsvApiProvider:
         """
         Fetch a chapter and return [(verse_text, reference), ...] in order.
 
-        `translation` is accepted for Protocol compatibility but ignored: the
-        ESV API serves only the ESV, so verses are always labelled ESV.
+        The ESV API serves only ESV; other translations are rejected.
 
         Raises:
             requests.HTTPError: on a non-2xx response (e.g. a bad API key).
             ValueError: if the response carries no passage text.
         """
+        if translation.upper() != "ESV":
+            raise ValueError("The ESV API supports ESV only; choose ESV explicitly.")
+        try:
+            return self._fetch(reference)
+        except requests.Timeout:
+            raise ValueError("ESV API request timed out; retry shortly.") from None
+        except requests.HTTPError as exc:
+            status = exc.response.status_code if exc.response is not None else None
+            reason = {
+                401: "authentication failed; check ESV_API_KEY",
+                403: "access denied; check the API application's permissions",
+                429: "rate limit reached; retry later",
+            }.get(status, "request failed; retry or check the passage reference")
+            raise ValueError(f"ESV API HTTP {status}: {reason}.") from None
+        except requests.RequestException:
+            raise ValueError("Cannot reach the ESV API; check network access.") from None
+
+    def _fetch(self, reference: str) -> list[Verse]:
         response = requests.get(
             API_URL,
             params={"q": reference, **_TEXT_OPTIONS},
@@ -75,9 +92,16 @@ class EsvApiProvider:
             timeout=self.timeout,
         )
         response.raise_for_status()
-        data: Any = response.json()
+        try:
+            data: Any = response.json()
+        except ValueError:
+            raise ValueError("ESV API returned invalid JSON.") from None
+        if not isinstance(data, dict):
+            raise ValueError("ESV API returned an invalid response object.")
 
         passages: list[str] = data.get("passages") or []
+        if not isinstance(passages, list) or not all(isinstance(p, str) for p in passages):
+            raise ValueError("ESV API returned invalid passage data.")
         if not passages:
             raise ValueError(f"no passage returned for {reference!r}")
         # canonical is the API's own normalized reference -- "John 3", but
@@ -104,11 +128,16 @@ def parse_passage_text(passage_text: str, label: str) -> list[Verse]:
 
     verses: list[Verse] = []
     for i, marker in enumerate(markers):
-        verse_num = int(marker.group(1))
+        verse_num = int(marker.group(2))
+        chapter = marker.group(1)
         start = marker.end()
         end = markers[i + 1].start() if i + 1 < len(markers) else len(passage_text)
         text = _WHITESPACE_RE.sub(" ", passage_text[start:end]).strip()
         if not text:
             continue
-        verses.append((text, format_citation(label, verse_num, _TRANSLATION)))
+        citation_label = label
+        if chapter:
+            book, _ = split_label(label)
+            citation_label = f"{book} {chapter}"
+        verses.append((text, format_citation(citation_label, verse_num, _TRANSLATION)))
     return verses

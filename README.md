@@ -1,5 +1,11 @@
 # sermonflow-slides
 
+Scripture retrieval currently defaults to the official ESV API and requires
+`ESV_API_KEY` in the MCP server environment. Create an application at
+https://api.esv.org/. Missing setup and API failures are returned as tool problems.
+The legacy scraper is available explicitly with `--provider bible-gateway`.
+
+
 Makes ProPresenter-ready slides for a sermon: Scripture one verse per slide,
 or sermon points in three styles. The slides match a hand-built Photoshop
 template closely enough to drop into the same service. It ships as a Claude
