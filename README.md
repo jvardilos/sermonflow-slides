@@ -337,16 +337,9 @@ the same way.
 ### Fonts
 
 The template is set in **Neue Haas Grotesk Display Pro** at 60px with 72px
-leading. What is bold is fixed and the same everywhere:
-
-| Slide | Text | Weight |
-|---|---|---|
-| Verse | verse text | Roman — **not** bold |
-| Verse | reference line | **Bold** |
-| Point | the point | **Bold Italic** |
-
-The PSD and point templates measure as 55 Roman / 65 Medium / Medium Italic;
-the reference and points are set heavier on purpose. The `.ttf` files are bundled in `src/sermonflow/assets/fonts/` and
+leading: 55 Roman for verse text and 65 Medium for the reference line, read
+from the PSD. Point slides use 65 Medium Italic, measured from the point
+templates. The `.ttf` files are bundled in `src/sermonflow/assets/fonts/` and
 found with `importlib.resources`, so nothing depends on system fonts.
 
 #### Kerning
@@ -432,12 +425,12 @@ Every layout produces the same thing: a `Placed`, which is a finished slide
 expressed as draw operations at ink coordinates and nothing else.
 
 ```python
-DrawOp(text="The Atonement.", left=91, ink_top=629, weight="bold-italic")
+DrawOp(text="The Atonement.", left=91, ink_top=629, weight="medium-italic")
 Placed(ops=(...), stem="point_004")
 ```
 
 `render.py` consumes only `Placed`, so it draws any layout without changes.
-Weights are names (`"roman"`, `"bold-italic"`), not font paths, so a layout
+Weights are names (`"roman"`, `"medium-italic"`), not font paths, so a layout
 set in another cut of the typeface needs no font code.
 
 A new point style is a planning function plus one entry in `POINT_STYLES`

@@ -490,12 +490,12 @@ class TestKerning:
 class TestReferenceWeight:
     """
     The reference line is set heavier than the verse. That contrast is the
-    deck's own design, and the weight is meant to be swappable without
-    disturbing any layout constant.
+    deck's own design (the PSD specifies 65 Medium), and the weight is meant to
+    be swappable without disturbing any layout constant.
     """
 
-    def test_default_weights(self):
-        assert slidegen.REFERENCE_WEIGHT == 'bold'
+    def test_default_matches_the_psd(self):
+        assert slidegen.REFERENCE_WEIGHT == 'medium'
         assert slidegen.VERSE_WEIGHT == 'roman'
 
     def test_reference_is_heavier_than_the_verse(self):
