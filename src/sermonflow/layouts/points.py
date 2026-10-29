@@ -1,5 +1,5 @@
 """
-Point slides: short statements, no reference line, set in Medium Italic.
+Point slides: short statements, no reference line, set in Bold Italic.
 
 Three styles. The first two are measured off template/point-templates/:
 
@@ -14,10 +14,12 @@ constants; see the Stacked section below.
 
 What the templates gave up, and where each number below comes from:
 
-  typeface   Neue Haas Display **Medium Italic** at the same 60px as the verse
-             deck. Rendered ink boxes match the templates to within a pixel on
-             all three probe lines; Bold Italic (the weight the roadmap
-             guessed) runs ~25px wide on a 26-character line.
+  typeface   Neue Haas Display **Bold Italic** at the same 60px as the verse
+             deck. The templates themselves measure as Medium Italic (ink
+             boxes match to within a pixel); points are deliberately set bold
+             so they read as unmistakably heavier than a verse. Bold Italic
+             runs ~25px wider than the templates on a 26-character line, so
+             points wrap slightly earlier than the templates do.
   left edge  91 -- the same LEFT_MARGIN as the verse deck.
   grid       every line in every template sits on 197 + k*72, i.e. the shared
              GRID_ORIGIN and LINE_HEIGHT. Nothing here needed its own grid.
