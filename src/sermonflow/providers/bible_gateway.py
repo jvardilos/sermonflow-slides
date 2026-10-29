@@ -33,7 +33,25 @@ _VERSE_CLASS_RE = re.compile(r"^([1-3]?[A-Za-z]+)-(\d+)-(\d+)$")
 _WHITESPACE_RE = re.compile(r"\s+")
 
 # Nodes that are navigation aids, not scripture.
-_JUNK_SUP_CLASSES = ("footnote", "crossreference", "versenum")
+_JUNK_CLASSES = ("footnote", "crossreference", "versenum", "chapternum")
+
+# Selectors are written against class names only, never element names: the
+# page has swapped <div> for <span> (and could again) without changing classes.
+_HEADING_SELECTORS = (
+    ".bcv .dropdown-display-text",
+    ".bcv",
+    ".passage-display .dropdown-display-text",
+)
+_SECTION_HEADINGS = ("h1", "h2", "h3", "h4", "h5", "h6")
+
+
+def _verse_match(tag) -> re.Match[str] | None:
+    """The Book-Chapter-Verse class match on `tag`, whatever its element is."""
+    classes = cast("list[str]", tag.get("class") or [])
+    return next(
+        (m for m in (_VERSE_CLASS_RE.match(c) for c in classes) if m),
+        None,
+    )
 
 
 class BibleGatewayProvider:
@@ -77,7 +95,9 @@ def parse_chapter(html: str, translation: str = DEFAULT_TRANSLATION) -> list[Ver
     """
     soup = BeautifulSoup(html, "html.parser")
 
-    heading = soup.select_one("div.bcv .dropdown-display-text")
+    heading = next(
+        (h for sel in _HEADING_SELECTORS if (h := soup.select_one(sel))), None
+    )
     if heading is None:
         raise ValueError("no passage found on page")
     # Passed through verbatim: format_citation parses it. The heading is
@@ -85,33 +105,29 @@ def parse_chapter(html: str, translation: str = DEFAULT_TRANSLATION) -> list[Ver
     # ones, and normalizing that difference is not this module's job.
     label = heading.get_text(strip=True)
 
-    body = soup.select_one(f"div.passage-content div.version-{translation}")
+    body = soup.select_one(
+        f".passage-content .version-{translation}"
+    ) or soup.select_one(f".version-{translation}")
     if body is None:
         raise ValueError(f"no {translation} text found on page")
 
     fragments: dict[int, list[str]] = {}
     order: list[int] = []
-    for span in body.find_all("span", class_="text"):
-        if span.find_parent("h3"):
+    for span in body.find_all(lambda t: _verse_match(t) is not None):
+        if span.find_parent(_SECTION_HEADINGS):
             continue  # section heading
-
-        classes = cast("list[str]", span.get("class") or [])
-        match = next(
-            (m for m in (_VERSE_CLASS_RE.match(c) for c in classes) if m),
-            None,
-        )
-        if match is None:
-            continue
+        if any(_verse_match(p) for p in span.parents):
+            continue  # inside a verse element already taken
+        match = _verse_match(span)
+        assert match is not None
         verse_num = int(match.group(3))
 
-        for junk in span.find_all("sup", class_=_JUNK_SUP_CLASSES):
-            junk.decompose()
-        for junk in span.find_all("span", class_="chapternum"):
+        for junk in span.find_all(class_=_JUNK_CLASSES):
             junk.decompose()
         # The divine name (LORD, GOD) is small capitals in print, which the page
         # does with CSS over the text "Lord". Keeping only the text would turn
         # YHWH into Adonai, so the capitals are made literal here.
-        for name in span.find_all("span", class_="small-caps"):
+        for name in span.find_all(class_="small-caps"):
             name.replace_with(name.get_text().upper())
 
         text = _WHITESPACE_RE.sub(" ", span.get_text()).strip()

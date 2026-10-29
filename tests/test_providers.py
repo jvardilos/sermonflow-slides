@@ -140,6 +140,83 @@ class TestBibleGatewayParse:
             parse_chapter(html, "ESV")
 
 
+class TestBibleGatewayMarkupDrift:
+    """The scraper keys on class names, so it survives element-name changes."""
+
+    # Shape of the live page: the heading is <span class="bcv"> (it used to be
+    # <div>), wrapped in an <h1>, and the text sits beside a decoy heading.
+    LIVE_SHAPED = """
+    <h1 class='passage-display'>
+      <span class='bcv'><span class="dropdown-display">
+        <span class="dropdown-display-text">John 3</span><span>&nbsp;</span>
+      </span></span>
+    </h1>
+    <div class="passage-text"><div class='passage-content passage-class-0'>
+      <div class="version-ESV result-text-style-normal text-html">
+        <h3><span id="en-ESV-26111" class="text John-3-1">You Must Be Born Again</span></h3>
+        <p class="chapter-1"><span class="text John-3-1"><span class="chapternum">3 </span>Now there was
+          a man <sup class='crossreference' data-cr='#x'>(<a href="#x">A</a>)</sup>named Nicodemus.</span>
+        <span id="en-ESV-26112" class="text John-3-2"><sup class="versenum">2 </sup>This man came
+          to Jesus<sup class='footnote'>[<a href="#f">a</a>]</sup> by night.</span></p>
+      </div>
+    </div></div>
+    """
+
+    def test_live_shaped_page(self):
+        assert parse_chapter(self.LIVE_SHAPED, "ESV") == [
+            ("Now there was a man named Nicodemus.", "John 3:1 ESV"),
+            ("This man came to Jesus by night.", "John 3:2 ESV"),
+        ]
+
+    def test_heading_wrapper_may_be_a_span(self):
+        html = TestBibleGatewayParse.HTML.replace(
+            '<div class="bcv"><div class="dropdown-display-text">John 3:16-17</div></div>',
+            '<span class="bcv"><span class="dropdown-display-text">John 3:16-17</span></span>',
+        )
+        assert len(parse_chapter(html, "ESV")) == 2
+
+    def test_heading_without_the_dropdown_node(self):
+        html = TestBibleGatewayParse.HTML.replace(
+            '<div class="bcv"><div class="dropdown-display-text">John 3:16-17</div></div>',
+            '<p class="bcv">John 3:16-17</p>',
+        )
+        assert [ref for _, ref in parse_chapter(html, "ESV")][0] == "John 3:16 ESV"
+
+    def test_every_element_name_may_change(self):
+        html = """
+        <header class="bcv"><b class="dropdown-display-text">John 3</b></header>
+        <main class="passage-content"><article class="version-ESV">
+          <section><i class="text John-3-16"><em class="versenum">16 </em>For God so
+            loved <small class="footnote">[a]</small>the world.</i></section>
+        </article></main>
+        """
+        assert parse_chapter(html, "ESV") == [
+            ("For God so loved the world.", "John 3:16 ESV")
+        ]
+
+    def test_section_heading_level_does_not_matter(self):
+        html = TestBibleGatewayParse.HTML.replace("<h3>", "<h4>").replace("</h3>", "</h4>")
+        assert all("heading" not in t for t, _ in parse_chapter(html, "ESV"))
+
+    def test_nested_verse_element_is_not_counted_twice(self):
+        html = """
+        <span class="bcv"><span class="dropdown-display-text">John 3</span></span>
+        <div class="passage-content"><div class="version-ESV">
+          <div class="text John-3-16">For God <span class="text John-3-16">so loved</span> the world.</div>
+        </div></div>
+        """
+        assert parse_chapter(html, "ESV") == [
+            ("For God so loved the world.", "John 3:16 ESV")
+        ]
+
+    def test_version_div_outside_passage_content(self):
+        html = """
+        <span class="bcv"><span class="dropdown-display-text">John 3</span></span>
+        <div class="version-ESV"><span class="text John-3-16">For God so loved.</span></div>
+        """
+        assert parse_chapter(html, "ESV")[0][1] == "John 3:16 ESV"
+
+
 class TestRegistry:
     def test_no_key_falls_back_to_bible_gateway(self, monkeypatch):
         monkeypatch.delenv(ESV_API_KEY_ENV, raising=False)
