@@ -131,10 +131,10 @@ class TestCenteredGeometry:
 
 
 class TestPointTypography:
-    def test_set_in_medium_italic(self):
+    def test_set_in_bold_italic(self):
         placed = slidegen.plan_centered(["A statement."])[0]
-        assert {op.weight for op in placed.ops} == {"medium-italic"}
-        assert slidegen.POINT_WEIGHT == "medium-italic"
+        assert {op.weight for op in placed.ops} == {"bold-italic"}
+        assert slidegen.POINT_WEIGHT == "bold-italic"
 
     def test_left_margin_matches_the_verse_deck(self):
         placed = slidegen.plan_rolling(ROLLING_POINTS)[-1]
