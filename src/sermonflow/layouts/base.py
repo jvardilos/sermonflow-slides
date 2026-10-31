@@ -138,8 +138,8 @@ class DrawOp(NamedTuple):
 
     `weight` is a key into fonts.WEIGHTS rather than a loaded font, so planning
     stays free of font *objects* (and of the filesystem) while still deciding
-    the typeface -- which is a layout decision: verse text is Roman, the
-    reference line and points are bold (see fonts.py).
+    the typeface -- which is a layout decision: the verse deck is Roman, the
+    point templates are Medium Italic.
     """
 
     text: str

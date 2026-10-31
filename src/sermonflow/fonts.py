@@ -52,28 +52,23 @@ WEIGHTS: dict[str, str] = {
     "black-italic": "NeueHaasDisplayBlackItalic.ttf",
 }
 
-#: What is bold, and what is not -- the one rule for every slide:
-#:
-#:   point slide      text       BOLD       (bold italic)
-#:   verse slide      verse text NOT bold   (Roman)
-#:   verse slide      reference  BOLD
-#:
-#: A bold weight is any WEIGHTS name that starts with "bold" or "black".
-#: tests/test_bold_contract.py pins this, in the draw ops and in rendered ink.
-
-#: Verse body: NOT bold. The PSD specifies 55 Roman.
+#: Verse body. The PSD specifies 55 Roman.
 VERSE_WEIGHT = "roman"
 
-#: Reference line: BOLD. The PSD specified 65 Medium; it is set bold so the
-#: reference is unmistakably heavier than the verse above it. Cap height does
-#: not change with weight and REF_MAX_WIDTH has room for the widest reference
-#: in the canon at any weight, so nothing else needs adjusting.
-REFERENCE_WEIGHT = "bold"
+#: Reference line. The PSD specifies 65 Medium and the deck is set in it, which
+#: is why it reads heavier than the verse above it -- that contrast is the
+#: deck's own design, not an artifact. Raise to "bold" or "black" for a heavier
+#: line; nothing else needs adjusting, since cap height does not change with
+#: weight and REF_MAX_WIDTH has room for the widest reference in the canon at
+#: any of them.
+REFERENCE_WEIGHT = "medium"
 
-#: Point slides: BOLD italic. The point templates were measured as Medium
-#: Italic; bold italic is wider (about 25px on a 26-character line), so points
-#: wrap a little earlier than the templates do. See layouts/points.py.
-POINT_WEIGHT = "bold-italic"
+#: Point slides. Measured, not guessed: rendering the point templates' lines in
+#: Medium Italic reproduces their ink boxes to within a pixel horizontally and
+#: exactly vertically, while Bold Italic -- what this constant provisionally
+#: held before template/point-templates/ existed -- runs about 25px wide on a
+#: 26-character line. See layouts/points.py for the full measurement.
+POINT_WEIGHT = "medium-italic"
 
 #: PIL picks its layout engine at import: Raqm when the Pillow build has
 #: libraqm, BASIC otherwise. That choice is not cosmetic here. Raqm applies GPOS
