@@ -1,11 +1,10 @@
 """
 Verse retrieval from BibleGateway by scraping the passage page.
 
-This is the zero-configuration fallback: it needs no API key, so the tool runs
-out of the box. It is also the fragile one -- it parses HTML, so it will break
-whenever BibleGateway restyles their passage page. That is exactly why
-retrieval is behind `BibleProvider`: prefer the ESV API (esv_api.py) when a key
-is available, and keep this as the always-there backup.
+This is the only retrieval backend: it needs no API key and none is ever used,
+so the tool runs out of the box. It is also fragile -- it parses HTML, so it
+will break whenever BibleGateway restyles their passage page, which is why the
+selectors match class names rather than element names.
 
 It does as little as possible: fetch, pull the verse spans out, hand back *raw*
 verse strings. All display formatting lives in sermonflow.text so it survives

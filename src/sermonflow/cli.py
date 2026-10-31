@@ -13,8 +13,7 @@ The pipeline is provider.fetch_chapter -> format_verses -> validate -> render.
 Validation runs between formatting and rendering so scrape residue is reported
 loudly instead of quietly ending up on a slide.
 
-The provider is chosen from the environment (ESV API when ESV_API_KEY is set,
-BibleGateway otherwise); `--provider` overrides that.
+Scripture is always fetched from BibleGateway.
 """
 
 from __future__ import annotations
@@ -38,8 +37,6 @@ from .providers import (
     DEFAULT_TRANSLATION,
     BibleProvider,
     get_default_provider,
-    get_provider,
-    provider_names,
 )
 from .render import generate_points, generate_slides, plan_points, reserve_run_dir
 from .text import Verse, find_artifacts, format_verses
@@ -379,12 +376,6 @@ def main(argv: Sequence[str] | None = None) -> None:
     parser.add_argument("-o", "--output-dir", default="./slides")
     parser.add_argument("-t", "--translation", default=DEFAULT_TRANSLATION)
     parser.add_argument(
-        "-p",
-        "--provider",
-        default=None,
-        help=f"force a backend: {' or '.join(provider_names())} (default: auto)",
-    )
-    parser.add_argument(
         "-n",
         "--dry-run",
         action="store_true",
@@ -411,14 +402,12 @@ def main(argv: Sequence[str] | None = None) -> None:
         )
         return
 
-    provider = get_provider(args.provider) if args.provider else None
     build(
         args.reference,
         output_dir=args.output_dir,
         translation=args.translation,
         dry_run=args.dry_run,
         strict=args.strict,
-        provider=provider,
     )
 
 

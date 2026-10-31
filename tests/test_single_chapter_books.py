@@ -35,7 +35,7 @@ class TestLabelParsing:
         "label,expected",
         [
             ("Jude", ("Jude", 1)),                   # BibleGateway's heading
-            ("Jude 1-25", ("Jude", 1)),              # the ESV API's canonical
+            ("Jude 1-25", ("Jude", 1)),              # a source's expanded range
             ("Jude 1–25", ("Jude", 1)),         # ... with an en dash
             ("Jude 1—25", ("Jude", 1)),         # ... with an em dash
             ("Philemon", ("Philemon", 1)),
@@ -50,8 +50,7 @@ class TestLabelParsing:
     def test_a_range_is_verses_not_chapters(self):
         # "Jude 1-25" is verses 1-25 of a one-chapter book, not chapters 1-25.
         # Reading that "1" as the chapter is right by luck; reading the range
-        # as chapters would put "Jude 1-25:3" on a slide, which is what the
-        # ESV API path used to do.
+        # as chapters would put "Jude 1-25:3" on a slide.
         assert split_label("Jude 1-25") == ("Jude", 1)
 
     def test_a_leading_numeral_belongs_to_the_book(self):
@@ -97,8 +96,8 @@ class TestCitationFormat:
         assert format_citation(label, verse) == expected
 
     def test_both_backends_agree_on_the_same_passage(self):
-        # The whole point: BibleGateway says "Jude", the ESV API says
-        # "Jude 1-25", and the slide must not depend on which one answered.
+        # The whole point: a source may say "Jude" or "Jude 1-25", and the
+        # slide must not depend on which one answered.
         assert format_citation("Jude", 3) == format_citation("Jude 1-25", 3)
 
     def test_never_emits_a_bare_colon(self):

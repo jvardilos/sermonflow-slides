@@ -63,9 +63,8 @@ mcp = MCPServer("sermonflow-slides", version=__version__)
 #: for a slide. But content with nothing to render makes the renderer raise (or
 #: render nothing) whatever strict says, so offering strict=false for it would
 #: send the model into a failing retry. Points are the caller's own words, so
-#: the problems say what to change. Scripture is fetched and cannot be edited
-#: -- and the ESV API ignores the translation -- so for a passage the honest
-#: next step is telling the user.
+#: the problems say what to change. Scripture is fetched and cannot be edited,
+#: so for a passage the honest next step is telling the user.
 _OVERRIDE_HINT = "call again with strict=false to render anyway"
 #: When something would be dropped, say so: the caller must not promise a
 #: complete deck, and `skipped` saves reading the problems as prose.
@@ -120,7 +119,7 @@ def preview_slides(
 
     Args:
         reference: book and chapter, e.g. "John 17" or "1 John 4".
-        translation: version code (default ESV; ignored by the ESV API backend).
+        translation: BibleGateway version code (default ESV).
 
     Returns `slides` (the wrapped lines per verse that will render),
     `skipped` (references of the verses that will not -- blank, or too long for
@@ -159,7 +158,7 @@ def generate_slides(
 
     Args:
         reference: book and chapter, e.g. "John 17".
-        translation: version code (default ESV; ignored by the ESV API backend).
+        translation: BibleGateway version code (default ESV).
         output_dir: folder to write the TIFF slides into. Each run gets its
             own timestamped subfolder of it, so one render never
             overwrites another's; the result reports that folder.

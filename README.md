@@ -163,11 +163,8 @@ three styles:
 
 ### Where the Scripture comes from
 
-The **ESV API** is used when `ESV_API_KEY` is set in the environment the slide
-server runs in. Keys are free for non-commercial use from
-[api.esv.org](https://api.esv.org/). Without a key, the plugin falls back to
-**BibleGateway**, which needs no setup and also serves translations other than
-the ESV.
+Always **BibleGateway**. There are no API keys and nothing to configure; any
+translation BibleGateway serves works via `translation` (ESV by default).
 
 ### Output
 
@@ -318,18 +315,16 @@ contract is:
 
 > `fetch_chapter(reference, translation)` → `[(verse_text, "Book Chapter:Verse TRANSLATION"), ...]` in verse order
 
-| Backend | When it's used | Notes |
-|---|---|---|
-| **ESV API** (`api.esv.org`) | `ESV_API_KEY` is set | First-party, stable and documented. ESV only. |
-| **BibleGateway** (scraper) | no key | Zero-config fallback. It parses HTML, so it breaks if the site changes its markup. |
+The one backend is the **BibleGateway** scraper. It needs no key, but it parses
+HTML, so its selectors match class names rather than element names to survive
+the site restyling its markup. `get_default_provider()` returns it, and the
+`BibleProvider` interface stays so tests can inject a fake. See
+[`docs/DATABASE_AND_PACKAGING.md`](docs/DATABASE_AND_PACKAGING.md) for the
+planned caching layer.
 
-A new backend is a class in `src/sermonflow/providers/` plus a line in
-`registry.py`. See [`docs/DATABASE_AND_PACKAGING.md`](docs/DATABASE_AND_PACKAGING.md)
-for the planned caching layer.
-
-**The reference line is built here, not trusted.** Sources disagree about what
-to call a passage: BibleGateway's heading for Jude is `Jude`, while the ESV API
-calls the same request `Jude 1-25`. `format_citation` parses whichever label
+**The reference line is built here, not trusted.** A source's label for a
+passage varies: BibleGateway's heading for Jude is `Jude`, and another source
+might call the same request `Jude 1-25`. `format_citation` parses whichever label
 arrived and always emits `Book Chapter:Verse TRANSLATION`. Single-chapter books
 get an explicit chapter (`Jude 1:3 ESV`) so every slide in a deck is labelled
 the same way.
@@ -452,7 +447,7 @@ automatically. The tool descriptions in `mcp_server.py` and the skill in
 | `.claude-plugin/`, `.mcp.json`, `skills/` | The plugin itself |
 | `src/sermonflow/mcp_server.py` | The MCP server the plugin starts |
 | `src/sermonflow/cli.py` | Fetch/validate/preview helpers the server uses, and a `sermonflow` command for local runs |
-| `src/sermonflow/providers/` | Retrieval behind `BibleProvider` (ESV API, BibleGateway) |
+| `src/sermonflow/providers/` | Retrieval behind `BibleProvider` (BibleGateway) |
 | `src/sermonflow/text.py` | Text normalization: artifacts, quote carry, capitalization |
 | `src/sermonflow/wrap.py` | Line breaking: greedy and balanced wrap |
 | `src/sermonflow/fonts.py` | Font loading, metrics, kerning, glyph drawing |
