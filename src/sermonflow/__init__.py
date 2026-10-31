@@ -148,10 +148,7 @@ from .providers import (
     DEFAULT_TRANSLATION as DEFAULT_TRANSLATION,
     BibleGatewayProvider as BibleGatewayProvider,
     BibleProvider as BibleProvider,
-    EsvApiProvider as EsvApiProvider,
     get_default_provider as get_default_provider,
-    get_provider as get_provider,
-    provider_names as provider_names,
 )
 
 __version__ = "0.3.0"

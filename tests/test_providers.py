@@ -1,10 +1,9 @@
 """
-Provider layer: parsing and selection, all offline.
+Provider layer: BibleGateway parsing and the default provider, all offline.
 
-The network calls themselves are not exercised (they depend on a third party),
-but the pure parsing that turns a fetched payload into the (verse_text,
-reference) contract is, against small hand-built fixtures, plus the registry
-rule that decides which backend to use.
+The network call itself is not exercised (it depends on a third party), but the
+pure parsing that turns a fetched page into the (verse_text, reference)
+contract is, against small hand-built fixtures.
 """
 
 import pytest
@@ -12,57 +11,9 @@ import pytest
 from sermonflow.providers import (
     BibleGatewayProvider,
     BibleProvider,
-    EsvApiProvider,
     get_default_provider,
-    get_provider,
     parse_chapter,
-    parse_passage_text,
 )
-from sermonflow.providers.registry import ESV_API_KEY_ENV
-
-
-class TestEsvApiParse:
-    """ESV API text: verses delimited by inline [n] markers."""
-
-    SAMPLE = (
-        "  [1] In the beginning, God created the heavens and the earth. "
-        "[2] The earth was without form and void, and darkness was over the "
-        "face of the deep.\n\n  [3] And God said, “Let there be light,” "
-        "and there was light."
-    )
-
-    def test_splits_on_markers(self):
-        verses = parse_passage_text(self.SAMPLE, "Genesis 1")
-        assert [ref for _, ref in verses] == [
-            "Genesis 1:1 ESV",
-            "Genesis 1:2 ESV",
-            "Genesis 1:3 ESV",
-        ]
-
-    def test_verse_text_is_clean_and_whitespace_collapsed(self):
-        verses = parse_passage_text(self.SAMPLE, "Genesis 1")
-        assert verses[0][0] == (
-            "In the beginning, God created the heavens and the earth."
-        )
-        assert "  " not in verses[2][0]
-        assert "\n" not in verses[2][0]
-
-    def test_chapter_qualified_markers_use_the_verse_number(self):
-        text = "[3:16] For God so loved the world, [3:17] For God did not send"
-        verses = parse_passage_text(text, "John 3")
-        assert [ref for _, ref in verses] == ["John 3:16 ESV", "John 3:17 ESV"]
-
-    def test_high_verse_numbers(self):
-        verses = parse_passage_text("[176] My final plea.", "Psalm 119")
-        assert verses == [("My final plea.", "Psalm 119:176 ESV")]
-
-    def test_empty_between_markers_is_skipped(self):
-        verses = parse_passage_text("[1]   [2] Real text here.", "Book 1")
-        assert verses == [("Real text here.", "Book 1:2 ESV")]
-
-    def test_no_markers_raises(self):
-        with pytest.raises(ValueError, match="no verse markers"):
-            parse_passage_text("Just some prose with no markers.", "Book 1")
 
 
 class TestBibleGatewayParse:
@@ -217,66 +168,14 @@ class TestBibleGatewayMarkupDrift:
         assert parse_chapter(html, "ESV")[0][1] == "John 3:16 ESV"
 
 
-class TestRegistry:
-    def test_no_key_falls_back_to_bible_gateway(self, monkeypatch):
-        monkeypatch.delenv(ESV_API_KEY_ENV, raising=False)
-        provider = get_default_provider()
-        assert isinstance(provider, BibleGatewayProvider)
+class TestDefaultProvider:
+    def test_default_is_bible_gateway_whatever_the_environment_holds(
+        self, monkeypatch
+    ):
+        # The decision is that API keys are never used: a key left over in the
+        # environment must not change which backend is chosen.
+        monkeypatch.setenv("ESV_API_KEY", "test-key-123")
+        assert isinstance(get_default_provider(), BibleGatewayProvider)
 
-    def test_key_selects_the_esv_api(self, monkeypatch):
-        monkeypatch.setenv(ESV_API_KEY_ENV, "test-key-123")
-        provider = get_default_provider()
-        assert isinstance(provider, EsvApiProvider)
-        assert provider.api_key == "test-key-123"
-
-    def test_get_provider_by_name(self, monkeypatch):
-        monkeypatch.setenv(ESV_API_KEY_ENV, "test-key-123")
-        assert isinstance(get_provider("esv-api"), EsvApiProvider)
-        assert isinstance(get_provider("bible-gateway"), BibleGatewayProvider)
-
-    def test_esv_api_by_name_without_key_raises(self, monkeypatch):
-        monkeypatch.delenv(ESV_API_KEY_ENV, raising=False)
-        with pytest.raises(ValueError, match=ESV_API_KEY_ENV):
-            get_provider("esv-api")
-
-    @pytest.mark.parametrize(
-        "name,expected",
-        [
-            ("esv", EsvApiProvider),
-            ("esvapi", EsvApiProvider),
-            ("  ESV-API ", EsvApiProvider),
-            ("biblegateway", BibleGatewayProvider),
-            ("gateway", BibleGatewayProvider),
-            ("Bible-Gateway", BibleGatewayProvider),
-        ],
-    )
-    def test_aliases_and_spacing_resolve(self, monkeypatch, name, expected):
-        monkeypatch.setenv(ESV_API_KEY_ENV, "test-key-123")
-        assert isinstance(get_provider(name), expected)
-
-    def test_unknown_provider_name_raises(self):
-        with pytest.raises(ValueError, match="unknown provider"):
-            get_provider("some-nonsense")
-
-    def test_every_table_entry_can_resolve(self):
-        # get_provider lowercases its input, so a key with capitals -- or an
-        # alias aimed at a name that isn't a key -- would be dead on arrival.
-        from sermonflow.providers.registry import _ALIASES, PROVIDERS
-
-        assert all(name == name.lower() for name in [*PROVIDERS, *_ALIASES])
-        assert set(_ALIASES.values()) <= set(PROVIDERS)
-
-    def test_provider_names_lists_the_canonical_backends(self):
-        from sermonflow import provider_names
-
-        assert provider_names() == ["esv-api", "bible-gateway"]
-
-    def test_unknown_provider_error_names_the_choices(self):
-        with pytest.raises(ValueError) as exc:
-            get_provider("some-nonsense")
-        assert "'esv-api'" in str(exc.value)
-        assert "'bible-gateway'" in str(exc.value)
-
-    def test_both_providers_satisfy_the_protocol(self):
+    def test_satisfies_the_protocol(self):
         assert isinstance(BibleGatewayProvider(), BibleProvider)
-        assert isinstance(EsvApiProvider("k"), BibleProvider)

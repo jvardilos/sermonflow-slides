@@ -10,8 +10,7 @@ it can be connected to any compatible LLM host.
 - Creates sermon-point slides in three styles: a rolling outline, a centered
   statement, or stacked paragraphs on one slide
 - Previews wrapping and validation results before writing slide files
-- Uses the ESV API when `ESV_API_KEY` is configured, with BibleGateway as a
-  zero-configuration fallback
+- Fetches Scripture from BibleGateway; no API key or other setup is needed
 
 ## Install
 

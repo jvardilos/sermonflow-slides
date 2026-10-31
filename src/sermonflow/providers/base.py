@@ -15,12 +15,12 @@ from typing import Protocol, runtime_checkable
 
 from ..text import Verse
 
-#: Default translation code. ESV is the deck's translation and the ESV API's
-#: only offering, so it is the project default.
+#: Default translation code. ESV is the deck's translation, so it is the
+#: project default.
 DEFAULT_TRANSLATION = "ESV"
 
-#: Hyphen plus the Unicode dashes a source might write a range with -- the ESV
-#: API uses an en dash, BibleGateway a plain hyphen. Escaped so every character
+#: Hyphen plus the Unicode dashes a source might write a range with -- a plain
+#: hyphen on BibleGateway, an en dash elsewhere. Escaped so every character
 #: is visible and the leading hyphen stays literal inside the character class.
 _DASHES = (
     "-"
@@ -50,11 +50,10 @@ def split_label(label: str) -> tuple[str, int]:
     Split a source's passage label into (book, chapter).
 
     Backends label verses from whatever the source calls the passage, and the
-    sources disagree. BibleGateway's heading for Jude is "Jude"; the ESV API
-    normalizes the same request to something like "Jude 1-25". Pasting
-    ":verse" onto either produced "Jude:1 ESV" and "Jude 1-25:3 ESV" on screen
-    -- so the label is parsed here rather than trusted, and every backend lands
-    on the same citation.
+    label varies: BibleGateway's heading for Jude is "Jude", for most books
+    "John 17", and a source may write "Jude 1-25". Pasting ":verse" onto the
+    last produced "Jude 1-25:3 ESV" on screen -- so the label is parsed here
+    rather than trusted, and every backend lands on the same citation.
 
     A trailing *range* rather than a single number means the source expanded a
     whole book into its verse range, which only happens for the single-chapter

@@ -29,9 +29,7 @@ the command with the absolute path to the installed executable.
     "sermonflow-slides": {
       "command": "/absolute/path/to/deps/bin/sermonflow-mcp",
       "type": "stdio",
-      "env": {
-        "ESV_API_KEY": "optional"
-      }
+      "env": {}
     }
   }
 }
@@ -53,7 +51,7 @@ package installed:
 
 The MCP endpoint is `http://127.0.0.1:8000/mcp`. Put authentication and HTTPS
 in front of it before exposing it beyond the local machine: rendering tools can
-write files and Scripture retrieval uses external providers.
+write files and Scripture retrieval reaches out to BibleGateway.
 
 ## Codex plugin support
 
@@ -64,8 +62,7 @@ changes the renderer or introduces a host-specific API.
 
 ## Output and source behavior
 
-- Scripture is fetched by reference through the official ESV API when
-  `ESV_API_KEY` is configured, otherwise through BibleGateway.
+- Scripture is fetched by reference from BibleGateway. No API key is used.
 - Point slides use only text supplied by the caller.
 - Generated slides are 1920×1080 RGBA TIFF files. Set `output_dir` explicitly
   when calling a generate tool; it is the only location the renderer writes.

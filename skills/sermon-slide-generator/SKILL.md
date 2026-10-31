@@ -29,8 +29,9 @@ current MCP server accepts only Scripture references and supplied point text.
    generation without a preview.
 4. Report the returned file paths and output directory.
 
-`translation` defaults to `ESV`. With `ESV_API_KEY`, retrieval uses the ESV
-API; otherwise BibleGateway is the fallback. The ESV API supports ESV only.
+`translation` defaults to `ESV`. Scripture is always fetched from BibleGateway;
+there are no API keys, so never ask the user for one or tell them to configure
+one.
 
 ## Point workflow
 

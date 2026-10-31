@@ -120,8 +120,8 @@ class TestStrictHint:
         result = mcp_server.generate_slides('Book 1', output_dir=str(tmp_path), strict=False)
         assert not result['rendered']
         assert 'strict=false' not in result['hint']
-        # The ESV API ignores the translation, so suggesting one would be
-        # another failing retry; the verses themselves can't be edited.
+        # Suggesting another translation would be another failing retry; the
+        # verses themselves can't be edited.
         assert 'translation' not in result['hint']
         assert 'tell the user' in result['hint']
         assert os.listdir(tmp_path) == []

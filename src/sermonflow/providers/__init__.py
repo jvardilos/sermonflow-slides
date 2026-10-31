@@ -2,27 +2,27 @@
 Verse retrieval, kept behind an interface.
 
 Retrieval is the failure-prone edge of the system: it depends on a third
-party's HTML or API staying put. So it is isolated behind `BibleProvider`
-(base.py) and everything durable -- formatting, layout, rendering -- lives
-above it and never imports a concrete provider. Swap the backend by adding a
-class here and pointing the registry at it; nothing downstream changes.
+party's HTML staying put. So it is isolated behind `BibleProvider` (base.py)
+and everything durable -- formatting, layout, rendering -- lives above it and
+never imports a concrete provider. The one backend is the BibleGateway scraper;
+there are no API keys and no other sources.
 """
 
 from __future__ import annotations
 
 from .base import DEFAULT_TRANSLATION, BibleProvider
 from .bible_gateway import BibleGatewayProvider, parse_chapter
-from .esv_api import EsvApiProvider, parse_passage_text
-from .registry import get_default_provider, get_provider, provider_names
+
+
+def get_default_provider() -> BibleProvider:
+    """The BibleGateway scraper, which needs no configuration."""
+    return BibleGatewayProvider()
+
 
 __all__ = [
     "DEFAULT_TRANSLATION",
     "BibleProvider",
     "BibleGatewayProvider",
-    "EsvApiProvider",
     "get_default_provider",
-    "get_provider",
     "parse_chapter",
-    "parse_passage_text",
-    "provider_names",
 ]
